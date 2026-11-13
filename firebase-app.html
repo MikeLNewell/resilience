@@ -2,7 +2,7 @@
 :root{font-family:system-ui,sans-serif;background:#0c191d;color:#eaf5ef}*{box-sizing:border-box}body{margin:0}main{max-width:940px;margin:auto;padding:24px}header{border-bottom:1px solid #345057;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}h1{font-size:23px}h2{font-size:19px}.card{background:#182a30;border:1px solid #345057;border-radius:14px;padding:20px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.grid .card{margin:0}button,input,select{font:inherit;border-radius:8px;padding:11px;border:1px solid #4d6569}input,select{background:#102127;color:#fff;max-width:100%}button{background:#a8e4c1;color:#09241b;font-weight:650;cursor:pointer}button.secondary{background:#2d474c;color:white}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.item{padding:14px 0;border-top:1px solid #345057;display:flex;gap:12px;justify-content:space-between;align-items:center}.muted{color:#a9bdb6}.warn{color:#f5cf94}.value{font-size:30px;font-weight:700}.hidden{display:none}label{display:grid;gap:5px}nav{display:flex;gap:8px;flex-wrap:wrap}small{color:#b5cbc2}</style></head><body><header><strong>◈ Household Resilience</strong><button class="secondary hidden" id="logout">Sign out</button></header><main><section id="auth" class="card"><h1>Private household planner</h1><p class="muted">Sign in to access your household inventory and purchasing plan.</p><form id="authForm"><div class="row"><label>Email<input type="email" id="email" autocomplete="email" required></label><label>Password<input type="password" id="password" autocomplete="current-password" minlength="6" required></label></div><p><button type="submit">Sign in</button> <button type="button" class="secondary" id="register">Create account</button></p></form></section><section id="app" class="hidden"><h1>Your household plan</h1><nav id="tabs"><button data-tab="dashboard">Dashboard</button><button data-tab="inventory">Inventory</button><button data-tab="purchases">Purchases</button><button data-tab="settings">Settings</button></nav><div id="content"></div></section><p id="message" role="status"></p></main><script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {getFirestore,doc,collection,getDoc,setDoc,addDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const $=id=>document.getElementById(id),say=s=>$('message').textContent=s;
 let cfg;try{cfg=(await import('./firebase-config.js')).firebaseConfig;if(!cfg||cfg.apiKey==='REPLACE_ME')throw Error('Configuration not set');}catch(e){$('auth').innerHTML='<h1>Firebase setup required</h1><p>Configure firebase-config.js before using secure sign-in.</p>';throw e}
 const auth=getAuth(initializeApp(cfg)),db=getFirestore(auth.app);
@@ -15,14 +15,54 @@ async function refresh(){let h=await getDoc(path());if(!h.exists()){settings={mo
 let [a,b]=await Promise.all([getDocs(collection(db,'households',user.uid,'inventory')),getDocs(collection(db,'households',user.uid,'purchases'))]);stock={};a.forEach(d=>stock[d.id]=d.data());purchases=b.docs.map(d=>d.data());render()}
 function render(){let items=catalogue.filter(x=>need(x)>0).sort((a,b)=>a.priority-b.priority||a.price-b.price);let month=new Date().toISOString().slice(0,7);let spent=purchases.filter(p=>p.purchasedAt?.toDate?.().toISOString().slice(0,7)===month).reduce((s,p)=>s+p.cost,0);let left=Math.max(0,settings.monthlyBudget-spent);let total=items.reduce((s,x)=>s+need(x)*x.price,0);let next=items.find(x=>x.price<=left)||items[0];
 let row=x=>'<div class="item"><div><strong>'+safe(x.name)+'</strong><br><small>'+safe(x.category)+' · P'+x.priority+' · '+owned(x)+'/'+target(x)+' owned · est. '+money(x.price)+'/unit</small></div><button data-add="'+x.id+'">Record</button></div>';
-let html=tab==='dashboard'?'<div class="grid"><div class="card"><small>Targets complete</small><div class="value">'+(catalogue.length-items.length)+'/'+catalogue.length+'</div></div><div class="card"><small>Monthly budget remaining</small><div class="value">'+money(left)+'</div></div><div class="card"><small>Estimated outstanding</small><div class="value">'+money(total)+'</div></div></div><div class="card"><h2>Next priority</h2>'+(next?row(next):'<p>All targets reached.</p>')+'</div>':tab==='inventory'?'<div class="card"><h2>Inventory</h2>'+catalogue.map(row).join('')+'</div>':tab==='purchases'?'<div class="card"><h2>Purchase history</h2>'+(purchases.length?purchases.map(p=>'<div class="item"><span>'+safe(p.name)+' × '+p.quantity+'</span><span>'+money(p.cost)+'</span></div>').join(''):'<p>No purchases recorded yet.</p>')+'</div>':'<div class="card"><h2>Planning settings</h2><form id="settingsForm" class="row"><label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="'+settings.monthlyBudget+'" required></label><label>Planning months<select id="months">'+[6,9,12].map(n=>'<option '+(settings.months===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><label>Target days<select id="days">'+[3,7,14,28].map(n=>'<option '+(settings.days===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><button>Save settings</button></form></div>';
+let html=tab==='dashboard'?'<div class="grid"><div class="card"><small>Targets complete</small><div class="value">'+(catalogue.length-items.length)+'/'+catalogue.length+'</div></div><div class="card"><small>Monthly budget remaining</small><div class="value">'+money(left)+'</div></div><div class="card"><small>Estimated outstanding</small><div class="value">'+money(total)+'</div></div></div><div class="card"><h2>Next priority</h2>'+(next?row(next):'<p>All targets reached.</p>')+'</div>':tab==='inventory'?'<div class="card"><h2>Inventory</h2>'+catalogue.map(row).join('')+'</div>':tab==='purchases'?'<div class="card"><h2>Purchase history</h2>'+(purchases.length?purchases.map(p=>'<div class="item"><span>'+safe(p.name)+' × '+p.quantity+'</span><span>'+money(p.cost)+'</span></div>').join(''):'<p>No purchases recorded yet.</p>')+'</div>':'<div class="card"><h2>Planning settings</h2><form id="settingsForm" class="row"><label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="'+safe(settings.monthlyBudget)+'" required></label><label>Planning months<select id="months">'+[6,9,12].map(n=>'<option '+(settings.months===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><label>Target days<select id="days">'+[3,7,14,28].map(n=>'<option '+(settings.days===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><button>Save settings</button></form></div>';
 $('content').innerHTML=html;
 document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>record(Number(b.dataset.add)));
 if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved')}catch(err){say(err.message)}};
 }
-async function record(id){let x=catalogue[id],q=Number(prompt('Quantity to add for '+x.name,'1'));if(!Number.isInteger(q)||q<=0)return;let cost=Number(prompt('Total paid (£), enter 0 if already owned',(q*x.price).toFixed(2)));if(!Number.isFinite(cost)||cost<0)return;say('Saving…');try{
-const ref=path('inventory',String(id));await runTransaction(db,async tx=>{let snap=await tx.get(ref);let prev=snap.exists()?snap.data().quantity:0;tx.set(ref,{name:x.name,category:x.category,quantity:prev+q,updatedAt:serverTimestamp()},{merge:true})});
-if(cost>0)await addDoc(collection(db,'households',user.uid,'purchases'),{itemId:id,name:x.name,quantity:q,cost,purchasedAt:serverTimestamp()});await refresh();say('Inventory updated')}catch(err){say('Save failed: '+err.message)}}
+async function record(id) {
+  const item = catalogue[id];
+  const quantity = Number(prompt('Quantity to add for ' + item.name, '1'));
+  if (!Number.isInteger(quantity) || quantity <= 0) return;
+  const paid = prompt('Total paid (£), enter 0 if already owned', (quantity * item.price).toFixed(2));
+  if (paid === null || paid.trim() === '') return;
+  const cost = Number(paid);
+  if (!Number.isFinite(cost) || cost < 0) return;
+
+  const inventoryRef = path('inventory', String(id));
+  const purchaseRef = cost > 0 ? doc(collection(db, 'households', user.uid, 'purchases')) : null;
+  say('Saving…');
+  try {
+    await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(inventoryRef);
+      const previous = snapshot.exists() ? snapshot.data().quantity : 0;
+      transaction.set(inventoryRef, {
+        name: item.name,
+        category: item.category,
+        quantity: previous + quantity,
+        updatedAt: serverTimestamp()
+      }, {merge: true});
+      if (purchaseRef) {
+        transaction.set(purchaseRef, {
+          itemId: id,
+          name: item.name,
+          quantity,
+          cost,
+          purchasedAt: serverTimestamp()
+        });
+      }
+    });
+  } catch (error) {
+    say('Save failed: ' + error.message);
+    return;
+  }
+  try {
+    await refresh();
+    say('Inventory updated');
+  } catch (error) {
+    say('Inventory saved. Refresh failed: ' + error.message);
+  }
+}
 $('authForm').onsubmit=async e=>{e.preventDefault();say('Signing in…');try{await signInWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message)}};
 $('register').onclick=async()=>{say('Creating account…');try{await createUserWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message)}};
 $('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});
