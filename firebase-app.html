@@ -123,7 +123,8 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
   </section>
   <section id="app" class="workspace hidden" aria-label="Household planner">
     <nav aria-label="Planner">
-      <button type="button" data-tab="dashboard" aria-current="page">Overview</button>
+      <button type="button" data-tab="plan" aria-current="page">12-month plan</button>
+      <button type="button" data-tab="dashboard">Overview</button>
       <button type="button" data-tab="inventory">Inventory</button>
       <button type="button" data-tab="shopping">Shopping list</button>
       <button type="button" data-tab="purchases">Purchases</button>
@@ -155,7 +156,7 @@ function say(message, tone = '') {
 let cfg;try{cfg=(await import('./firebase-config.js')).firebaseConfig;if(!cfg||cfg.apiKey==='REPLACE_ME')throw Error('Configuration not set');}catch(e){$('auth').innerHTML='<h1>Firebase setup required</h1><p>Configure firebase-config.js before using secure sign-in.</p>';throw e}
 const auth=getAuth(initializeApp(cfg)),db=getFirestore(auth.app);
 const catalogue=[['Water','Drinking water (litres)',3,210,.4],['Safety','Carbon monoxide alarm',0,1,25],['Safety','Smoke alarm',0,2,15],['Lighting','LED lantern',1,3,14],['Communications','Battery radio',1,1,28],['Power','Power bank',1,2,22],['Food','Tinned beans',2,20,.8],['Food','Rice (kg)',2,3,1.7],['Food','Pasta (kg)',2,4,1.5],['Food','UHT milk (litres)',2,16,1.2],['Cooking','Manual tin opener',1,1,8],['Medical','First aid kit',1,1,25],['Sanitation','Heavy-duty bin bags',1,2,6],['Warmth','Warm sleeping bags',2,5,25]].map((v,id)=>({id,category:v[0],name:v[1],priority:v[2],target:v[3],price:v[4]}));
-let user=null,settings={},stock={},purchases=[],tab='dashboard';
+let user=null,settings={},stock={},purchases=[],tab='plan';
 function path(...parts){return doc(db,'households',user.uid,...parts)}
 function safe(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function owned(x){return stock[x.id]?.quantity||0}function target(x){return x.id===0?settings.days*15:x.target}function need(x){return Math.max(0,target(x)-owned(x))}function money(n){return '£'+Number(n).toFixed(2)}
@@ -164,6 +165,25 @@ let [a,b]=await Promise.all([getDocs(collection(db,'households',user.uid,'invent
 const filters = {search: '', category: '', status: ''};
 const categories = [...new Set(catalogue.map(item => item.category))].sort();
 const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', timeZone: 'Europe/London'});
+
+function monthlyPlan() {
+  const remaining = catalogue.map(item => ({...item, remaining: Math.ceil(need(item))}))
+    .sort((a, b) => a.priority - b.priority || a.price - b.price);
+  let balance = 0;
+  return Array.from({length: 12}, (_, index) => {
+    balance += 5000;
+    const lines = [];
+    for (const item of remaining) {
+      const price = Math.round(item.price * 100);
+      const quantity = Math.min(item.remaining, Math.floor(balance / price));
+      if (!quantity) continue;
+      lines.push({...item, quantity, cost: quantity * price / 100});
+      item.remaining -= quantity;
+      balance -= quantity * price;
+    }
+    return {month: index + 1, lines, balance: balance / 100};
+  });
+}
 
 function render(){let items=catalogue.filter(x=>need(x)>0).sort((a,b)=>a.priority-b.priority||a.price-b.price);let month=new Date().toISOString().slice(0,7);let spent=purchases.filter(p=>p.purchasedAt?.toDate?.().toISOString().slice(0,7)===month).reduce((s,p)=>s+p.cost,0);let left=Math.max(0,settings.monthlyBudget-spent);let total=items.reduce((s,x)=>s+need(x)*x.price,0);let next=items.find(x=>x.price<=left)||items[0];
 const row = item => {
@@ -177,9 +197,25 @@ const row = item => {
     <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
   </div>`;
 };
-const titles = {dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', settings: 'Planning settings'};
+const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', settings: 'Planning settings'};
 let html = `<div class="page-heading"><h1>${titles[tab]}</h1></div>`;
-if (tab === 'dashboard') {
+if (tab === 'plan') {
+  const plan = monthlyPlan();
+  const planned = plan.flatMap(month => month.lines).reduce((sum, line) => sum + line.cost, 0);
+  html += `<div class="card"><p><strong>£50 each month · £600 over 12 months</strong></p>
+    <p class="muted">A rolling plan based on your current stock and targets. Unspent money carries forward. Prices are estimates. Record purchases to update the remaining plan.</p>
+    <p>Planned purchases ${money(planned)} · Unallocated budget ${money(600 - planned)}</p>
+    ${total > planned + .01 ? `<p class="muted">${money(total - planned)} of estimated supplies remain beyond this plan.</p>` : ''}
+  </div>
+  ${plan.map(month => `<section class="card"><h2>Month ${month.month}</h2>
+    <p class="muted stock-summary">${money(month.lines.reduce((sum, line) => sum + line.cost, 0))} planned · ${money(month.balance)} carried forward</p>
+    ${month.lines.length ? month.lines.map(line => `<div class="item">
+      <div class="item-name"><strong>${safe(line.name)}</strong><small>${safe(line.category)}</small></div>
+      <div class="item-stock"><span>${line.quantity} × ${money(line.price)}</span><strong>${money(line.cost)}</strong></div>
+      <button type="button" data-add="${line.id}" data-quantity="${line.quantity}" aria-label="Record ${safe(line.name)}">Bought</button>
+    </div>`).join('') : '<p>Keep this month’s £50 in reserve. No further catalogue purchases are allocated.</p>'}
+  </section>`).join('')}`;
+} else if (tab === 'dashboard') {
   const completed = catalogue.length - items.length;
   html += `<div class="grid">
     <div class="metric"><small>Stock targets met</small><div class="value">${completed} / ${catalogue.length}</div>
@@ -274,17 +310,17 @@ if (tab === 'inventory') {
 }
 $('content').onclick = event => {
   const button = event.target.closest('button[data-add]');
-  if (button) openRecord(Number(button.dataset.add));
+  if (button) openRecord(Number(button.dataset.add), Number(button.dataset.quantity || 1));
 };
 if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved', 'success')}catch(err){say(err.message, 'error')}};
 }
 let selectedItem = null;
-function openRecord(id) {
+function openRecord(id, quantity = 1) {
   if ($('recordSave').disabled) return;
   selectedItem = catalogue[id];
   $('recordTitle').textContent = 'Record ' + selectedItem.name;
-  $('recordQuantity').value = '1';
-  $('recordCost').value = selectedItem.price.toFixed(2);
+  $('recordQuantity').value = String(quantity);
+  $('recordCost').value = (selectedItem.price * quantity).toFixed(2);
   $('recordForm').classList.remove('hidden');
   $('recordQuantity').focus();
 }
