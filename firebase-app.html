@@ -1,17 +1,153 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Household Resilience | Secure planner</title><style>
-:root{font-family:system-ui,sans-serif;background:#0c191d;color:#eaf5ef}*{box-sizing:border-box}body{margin:0}main{max-width:940px;margin:auto;padding:24px}header{border-bottom:1px solid #345057;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}h1{font-size:23px}h2{font-size:19px}.card{background:#182a30;border:1px solid #345057;border-radius:14px;padding:20px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.grid .card{margin:0}button,input,select{font:inherit;border-radius:8px;padding:11px;border:1px solid #4d6569}input,select{background:#102127;color:#fff;max-width:100%}button{background:#a8e4c1;color:#09241b;font-weight:650;cursor:pointer}button.secondary{background:#2d474c;color:white}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.item{padding:14px 0;border-top:1px solid #345057;display:flex;gap:12px;justify-content:space-between;align-items:center}.muted{color:#a9bdb6}.warn{color:#f5cf94}.value{font-size:30px;font-weight:700}.hidden{display:none}label{display:grid;gap:5px}nav{display:flex;gap:8px;flex-wrap:wrap}small{color:#b5cbc2}</style></head><body><header><strong>◈ Household Resilience</strong><button class="secondary hidden" id="logout">Sign out</button></header><main><section id="auth" class="card"><h1>Private household planner</h1><p class="muted">Sign in to access your household inventory and purchasing plan.</p><form id="authForm"><div class="row"><label>Email<input type="email" id="email" autocomplete="email" required></label><label>Password<input type="password" id="password" autocomplete="current-password" minlength="6" required></label></div><p><button type="submit">Sign in</button> <button type="button" class="secondary" id="register">Create account</button></p></form></section><section id="app" class="hidden"><h1>Your household plan</h1><nav id="tabs"><button data-tab="dashboard">Dashboard</button><button data-tab="inventory">Inventory</button><button data-tab="purchases">Purchases</button><button data-tab="settings">Settings</button></nav><form id="recordForm" class="card hidden">
-<h2 id="recordTitle"></h2>
-<div class="row">
-<label>Quantity<input id="recordQuantity" type="number" min="1" step="1" required></label>
-<label>Total paid (£)<input id="recordCost" type="number" min="0" step="0.01" required></label>
-</div>
-<p class="muted">Enter £0 for stock you already own.</p>
-<div class="row"><button id="recordSave" type="submit">Save item</button><button id="recordCancel" type="button" class="secondary">Cancel</button></div>
-</form><div id="content"></div></section><p id="message" role="status"></p></main><script type="module">
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  color-scheme: light;
+  --canvas: #f4f1ea;
+  --surface: #fcfaf5;
+  --ink: #201e18;
+  --muted: #625c50;
+  --accent: #a8311d;
+  --accent-hover: #822514;
+  --line: #d8d0c2;
+  --control: #82776a;
+  --soft: #ece6da;
+  --success: #28593f;
+  --error: #942d20;
+  --display: 'Instrument Serif', Georgia, serif;
+  --body: Inter, system-ui, sans-serif;
+  --radius: 4px;
+  --gap: clamp(16px, 3vw, 32px);
+  font: 400 16px/1.55 var(--body);
+  color: var(--ink);
+  background: var(--canvas);
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+main, .header-inner { max-width: 1240px; margin-inline: auto; padding-inline: var(--gap); }
+main { padding-block: clamp(24px, 5vw, 56px); }
+header { border-bottom: 1px solid var(--line); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 76px; }
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 700; letter-spacing: -.035em; }
+.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; color: white; background: var(--accent); font: 26px/1 var(--display); border-radius: var(--radius); }
+h1, h2, p { margin: 0; }
+h1, h2 { font-family: var(--display); font-weight: 400; }
+h1 { font-size: clamp(44px, 7vw, 76px); line-height: .98; letter-spacing: -.025em; }
+h2 { font-size: clamp(29px, 4vw, 40px); line-height: 1.05; }
+.muted, small { color: var(--muted); }
+small { font-size: .86rem; }
+button, input, select { min-height: 44px; max-width: 100%; border: 1px solid var(--control); border-radius: var(--radius); font: inherit; }
+button { background: var(--accent); color: #fff; border-color: transparent; font-weight: 650; padding: 9px 16px; cursor: pointer; transition: background-color 140ms ease; }
+button:hover { background: var(--accent-hover); }
+button.secondary { color: var(--ink); background: transparent; border-color: var(--control); }
+button.secondary:hover { background: var(--soft); }
+button:disabled { opacity: .65; cursor: wait; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+input, select { background: var(--surface); color: var(--ink); padding: 8px 10px; width: 100%; }
+label { display: grid; gap: 6px; font-size: .9rem; font-weight: 600; }
+.row { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.row > label { flex: 1 1 155px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--gap); }
+.auth-layout { display: grid; grid-template-columns: 1.15fr 1fr; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-height: 460px; }
+.auth-intro { background: #e9e1d3; padding: clamp(24px, 6vw, 72px); display: grid; align-content: center; gap: 20px; }
+.auth-intro p { max-width: 35ch; }
+.auth-panel { background: var(--surface); padding: clamp(24px, 5vw, 56px); display: grid; align-content: center; gap: 24px; }
+.auth-panel form { display: grid; gap: 16px; }
+.workspace { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: var(--gap); }
+nav { display: grid; align-content: start; gap: 5px; }
+nav button { color: var(--muted); background: transparent; border: 1px solid transparent; text-align: left; }
+nav button:hover { color: var(--ink); background: var(--soft); }
+nav [aria-current="page"] { color: var(--accent); background: var(--surface); border-color: var(--line); }
+.workspace-body { min-width: 0; display: grid; gap: var(--gap); align-content: start; }
+#content { display: grid; gap: var(--gap); }
+.page-heading { display: grid; gap: 10px; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); }
+.metric { min-width: 0; padding: clamp(14px, 2.5vw, 24px); display: grid; align-content: start; gap: 6px; }
+.metric + .metric { border-left: 1px solid var(--line); }
+.value { font: clamp(34px, 4.6vw, 54px)/1 var(--display); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.progress { display: block; width: 100%; height: 7px; accent-color: var(--accent); }
+.priority { border-top: 3px solid var(--accent); }
+.priority h2, .card > h2 { margin-bottom: 16px; }
+.item { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(95px, .75fr) auto; align-items: center; gap: 16px; padding: 15px 0; border-top: 1px solid var(--line); }
+.item:last-child { padding-bottom: 0; }
+.item-name { display: grid; gap: 3px; }
+.item-stock { display: grid; gap: 6px; }
+.item-stock strong, .money { font-variant-numeric: tabular-nums; }
+.purchase { grid-template-columns: minmax(0, 1fr) auto; }
+#recordForm { border-top: 3px solid var(--accent); display: grid; gap: 14px; }
+#recordForm h2 { margin: 0; }
+#message { margin-bottom: 16px; padding: 10px 14px; background: var(--soft); border-left: 3px solid var(--muted); overflow-wrap: anywhere; }
+#message:empty { display: none; }
+#message[data-tone="success"] { color: var(--success); border-color: var(--success); }
+#message[data-tone="error"] { color: var(--error); border-color: var(--error); }
+.hidden, #recordForm.hidden { display: none; }
+@media (max-width: 780px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  nav { display: flex; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  nav button { text-align: center; flex: 1 1 auto; padding-inline: 8px; }
+}
+@media (max-width: 570px) {
+  .auth-layout { grid-template-columns: minmax(0, 1fr); }
+  .auth-intro { gap: 12px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .metric + .metric { border-left: 0; border-top: 1px solid var(--line); }
+  .item:not(.purchase) { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
+  .item-name { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header><div class="header-inner">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">H</span>Household Resilience</div>
+  <button class="secondary hidden" id="logout">Sign out</button>
+</div></header>
+<main>
+  <p id="message" role="status"></p>
+  <section id="auth" class="auth-layout" aria-labelledby="auth-title">
+    <div class="auth-intro">
+      <h1 id="auth-title">Household<br>Resilience</h1>
+      <p>Track the supplies you have and plan what to buy next.</p>
+    </div>
+    <div class="auth-panel">
+      <h2>Sign in</h2>
+      <form id="authForm">
+        <label>Email<input type="email" id="email" autocomplete="email" required></label>
+        <label>Password<input type="password" id="password" autocomplete="current-password" minlength="6" required></label>
+        <div class="row"><button type="submit">Sign in</button><button type="button" class="secondary" id="register">Create account</button></div>
+      </form>
+    </div>
+  </section>
+  <section id="app" class="workspace hidden" aria-label="Household planner">
+    <nav aria-label="Planner">
+      <button type="button" data-tab="dashboard" aria-current="page">Overview</button>
+      <button type="button" data-tab="inventory">Inventory</button>
+      <button type="button" data-tab="purchases">Purchases</button>
+      <button type="button" data-tab="settings">Settings</button>
+    </nav>
+    <div class="workspace-body">
+      <form id="recordForm" class="card hidden" aria-labelledby="recordTitle">
+        <h2 id="recordTitle"></h2>
+        <div class="row">
+          <label>Quantity<input id="recordQuantity" type="number" min="1" step="1" required></label>
+          <label>Total paid (£)<input id="recordCost" type="number" min="0" step="0.01" required></label>
+        </div>
+        <p class="muted">Enter £0 for stock you already own.</p>
+        <div class="row"><button id="recordSave" type="submit">Save item</button><button id="recordCancel" type="button" class="secondary">Cancel</button></div>
+      </form>
+      <div id="content"></div>
+    </div>
+  </section>
+</main>
+<script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-const $=id=>document.getElementById(id),say=s=>$('message').textContent=s;
+const $ = id => document.getElementById(id);
+function say(message, tone = '') {
+  $('message').dataset.tone = tone;
+  $('message').textContent = message;
+}
 let cfg;try{cfg=(await import('./firebase-config.js')).firebaseConfig;if(!cfg||cfg.apiKey==='REPLACE_ME')throw Error('Configuration not set');}catch(e){$('auth').innerHTML='<h1>Firebase setup required</h1><p>Configure firebase-config.js before using secure sign-in.</p>';throw e}
 const auth=getAuth(initializeApp(cfg)),db=getFirestore(auth.app);
 const catalogue=[['Water','Drinking water (litres)',3,210,.4],['Safety','Carbon monoxide alarm',0,1,25],['Safety','Smoke alarm',0,2,15],['Lighting','LED lantern',1,3,14],['Communications','Battery radio',1,1,28],['Power','Power bank',1,2,22],['Food','Tinned beans',2,20,.8],['Food','Rice (kg)',2,3,1.7],['Food','Pasta (kg)',2,4,1.5],['Food','UHT milk (litres)',2,16,1.2],['Cooking','Manual tin opener',1,1,8],['Medical','First aid kit',1,1,25],['Sanitation','Heavy-duty bin bags',1,2,6],['Warmth','Warm sleeping bags',2,5,25]].map((v,id)=>({id,category:v[0],name:v[1],priority:v[2],target:v[3],price:v[4]}));
@@ -22,11 +158,45 @@ function owned(x){return stock[x.id]?.quantity||0}function target(x){return x.id
 async function refresh(){let h=await getDoc(path());if(!h.exists()){settings={monthlyBudget:50,months:12,days:14,rollover:true};await setDoc(path(),{...settings,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})}else settings=h.data();
 let [a,b]=await Promise.all([getDocs(collection(db,'households',user.uid,'inventory')),getDocs(collection(db,'households',user.uid,'purchases'))]);stock={};a.forEach(d=>stock[d.id]=d.data());purchases=b.docs.map(d=>d.data());render()}
 function render(){let items=catalogue.filter(x=>need(x)>0).sort((a,b)=>a.priority-b.priority||a.price-b.price);let month=new Date().toISOString().slice(0,7);let spent=purchases.filter(p=>p.purchasedAt?.toDate?.().toISOString().slice(0,7)===month).reduce((s,p)=>s+p.cost,0);let left=Math.max(0,settings.monthlyBudget-spent);let total=items.reduce((s,x)=>s+need(x)*x.price,0);let next=items.find(x=>x.price<=left)||items[0];
-let row=x=>'<div class="item"><div><strong>'+safe(x.name)+'</strong><br><small>'+safe(x.category)+' · P'+x.priority+' · '+owned(x)+'/'+target(x)+' owned · est. '+money(x.price)+'/unit</small></div><button data-add="'+x.id+'">Record</button></div>';
-let html=tab==='dashboard'?'<div class="grid"><div class="card"><small>Targets complete</small><div class="value">'+(catalogue.length-items.length)+'/'+catalogue.length+'</div></div><div class="card"><small>Monthly budget remaining</small><div class="value">'+money(left)+'</div></div><div class="card"><small>Estimated outstanding</small><div class="value">'+money(total)+'</div></div></div><div class="card"><h2>Next priority</h2>'+(next?row(next):'<p>All targets reached.</p>')+'</div>':tab==='inventory'?'<div class="card"><h2>Inventory</h2>'+catalogue.map(row).join('')+'</div>':tab==='purchases'?'<div class="card"><h2>Purchase history</h2>'+(purchases.length?purchases.map(p=>'<div class="item"><span>'+safe(p.name)+' × '+p.quantity+'</span><span>'+money(p.cost)+'</span></div>').join(''):'<p>No purchases recorded yet.</p>')+'</div>':'<div class="card"><h2>Planning settings</h2><form id="settingsForm" class="row"><label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="'+safe(settings.monthlyBudget)+'" required></label><label>Planning months<select id="months">'+[6,9,12].map(n=>'<option '+(settings.months===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><label>Target days<select id="days">'+[3,7,14,28].map(n=>'<option '+(settings.days===n?'selected':'')+'>'+n+'</option>').join('')+'</select></label><button>Save settings</button></form></div>';
+const row = item => {
+  const quantity = owned(item);
+  const goal = target(item);
+  return `<div class="item">
+    <div class="item-name"><strong>${safe(item.name)}</strong><small>${safe(item.category)} · Priority ${item.priority + 1} · Est. ${money(item.price)} per unit</small></div>
+    <div class="item-stock"><small><strong>${safe(quantity)}</strong> of ${safe(goal)} in stock</small>
+      <progress class="progress" aria-label="${safe(item.name)} stock target" value="${Math.min(quantity, goal)}" max="${goal}"></progress>
+    </div>
+    <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
+  </div>`;
+};
+const titles = {dashboard: 'Household overview', inventory: 'Inventory', purchases: 'Purchases', settings: 'Planning settings'};
+let html = `<div class="page-heading"><h1>${titles[tab]}</h1></div>`;
+if (tab === 'dashboard') {
+  const completed = catalogue.length - items.length;
+  html += `<div class="grid">
+    <div class="metric"><small>Stock targets met</small><div class="value">${completed} / ${catalogue.length}</div>
+      <progress class="progress" aria-label="Stock targets met" value="${completed}" max="${catalogue.length}"></progress></div>
+    <div class="metric"><small>Budget remaining this month</small><div class="value">${money(left)}</div></div>
+    <div class="metric"><small>Estimated cost to reach targets</small><div class="value">${money(total)}</div></div>
+  </div>
+  <section class="card priority"><h2>Next priority</h2>${next ? row(next) : '<p>All stock targets reached.</p>'}</section>`;
+} else if (tab === 'inventory') {
+  html += `<section class="card" aria-label="Stock catalogue"><h2>Stock catalogue</h2>${catalogue.map(row).join('')}</section>`;
+} else if (tab === 'purchases') {
+  html += `<section class="card" aria-label="Purchase history">${purchases.length ? purchases.map(p =>
+    `<div class="item purchase"><span>${safe(p.name)} × ${safe(p.quantity)}</span><strong class="money">${money(p.cost)}</strong></div>`
+  ).join('') : '<p>No purchases recorded yet.</p>'}</section>`;
+} else {
+  html += `<div class="card"><form id="settingsForm" class="row">
+    <label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="${safe(settings.monthlyBudget)}" required></label>
+    <label>Planning months<select id="months">${[6, 9, 12].map(n => `<option ${settings.months === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <label>Target days<select id="days">${[3, 7, 14, 28].map(n => `<option ${settings.days === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <button>Save settings</button>
+  </form></div>`;
+}
 $('content').innerHTML=html;
 document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>openRecord(Number(b.dataset.add)));
-if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved')}catch(err){say(err.message)}};
+if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved', 'success')}catch(err){say(err.message, 'error')}};
 }
 let selectedItem = null;
 function openRecord(id) {
@@ -83,19 +253,28 @@ async function record(id, quantity, cost) {
       }
     });
   } catch (error) {
-    say('Save failed: ' + error.message);
+    say('Save failed: ' + error.message, 'error');
     return;
   }
   closeRecord();
   try {
     await refresh();
-    say('Inventory updated');
+    say('Inventory updated', 'success');
   } catch (error) {
-    say('Inventory saved. Refresh failed: ' + error.message);
+    say('Inventory saved. Refresh failed: ' + error.message, 'error');
   }
 }
-$('authForm').onsubmit=async e=>{e.preventDefault();say('Signing in…');try{await signInWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message)}};
-$('register').onclick=async()=>{say('Creating account…');try{await createUserWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message)}};
-$('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});
-onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){try{await refresh();say('')}catch(err){say('Database access failed: '+err.message)}}else{closeRecord();stock={};purchases=[];say('')}});
+$('authForm').onsubmit=async e=>{e.preventDefault();say('Signing in…');try{await signInWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message, 'error')}};
+$('register').onclick=async()=>{say('Creating account…');try{await createUserWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message, 'error')}};
+$('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = () => {
+  if ($('recordSave').disabled || !$('content').firstElementChild) return;
+  closeRecord();
+  tab = b.dataset.tab;
+  document.querySelectorAll('[data-tab]').forEach(button => {
+    if (button === b) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  render();
+});
+onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();stock={};purchases=[];$('content').replaceChildren();say('')}});
 </script></body></html>
