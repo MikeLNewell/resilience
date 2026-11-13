@@ -54,6 +54,9 @@ label { display: grid; gap: 6px; font-size: .9rem; font-weight: 600; }
 .auth-panel { background: var(--surface); padding: clamp(24px, 5vw, 56px); display: grid; align-content: center; gap: 24px; }
 .auth-panel form { display: grid; gap: 16px; }
 .workspace { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: var(--gap); }
+.filters { margin-bottom: 18px; }
+.stock-summary { margin-bottom: 10px; }
+.purchase-date { display: block; }
 nav { display: grid; align-content: start; gap: 5px; }
 nav button { color: var(--muted); background: transparent; border: 1px solid transparent; text-align: left; }
 nav button:hover { color: var(--ink); background: var(--soft); }
@@ -122,6 +125,7 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
     <nav aria-label="Planner">
       <button type="button" data-tab="dashboard" aria-current="page">Overview</button>
       <button type="button" data-tab="inventory">Inventory</button>
+      <button type="button" data-tab="shopping">Shopping list</button>
       <button type="button" data-tab="purchases">Purchases</button>
       <button type="button" data-tab="settings">Settings</button>
     </nav>
@@ -157,6 +161,10 @@ function safe(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 function owned(x){return stock[x.id]?.quantity||0}function target(x){return x.id===0?settings.days*15:x.target}function need(x){return Math.max(0,target(x)-owned(x))}function money(n){return '£'+Number(n).toFixed(2)}
 async function refresh(){let h=await getDoc(path());if(!h.exists()){settings={monthlyBudget:50,months:12,days:14,rollover:true};await setDoc(path(),{...settings,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})}else settings=h.data();
 let [a,b]=await Promise.all([getDocs(collection(db,'households',user.uid,'inventory')),getDocs(collection(db,'households',user.uid,'purchases'))]);stock={};a.forEach(d=>stock[d.id]=d.data());purchases=b.docs.map(d=>d.data());render()}
+const filters = {search: '', category: '', status: ''};
+const categories = [...new Set(catalogue.map(item => item.category))].sort();
+const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', timeZone: 'Europe/London'});
+
 function render(){let items=catalogue.filter(x=>need(x)>0).sort((a,b)=>a.priority-b.priority||a.price-b.price);let month=new Date().toISOString().slice(0,7);let spent=purchases.filter(p=>p.purchasedAt?.toDate?.().toISOString().slice(0,7)===month).reduce((s,p)=>s+p.cost,0);let left=Math.max(0,settings.monthlyBudget-spent);let total=items.reduce((s,x)=>s+need(x)*x.price,0);let next=items.find(x=>x.price<=left)||items[0];
 const row = item => {
   const quantity = owned(item);
@@ -169,7 +177,7 @@ const row = item => {
     <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
   </div>`;
 };
-const titles = {dashboard: 'Household overview', inventory: 'Inventory', purchases: 'Purchases', settings: 'Planning settings'};
+const titles = {dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', settings: 'Planning settings'};
 let html = `<div class="page-heading"><h1>${titles[tab]}</h1></div>`;
 if (tab === 'dashboard') {
   const completed = catalogue.length - items.length;
@@ -181,11 +189,46 @@ if (tab === 'dashboard') {
   </div>
   <section class="card priority"><h2>Next priority</h2>${next ? row(next) : '<p>All stock targets reached.</p>'}</section>`;
 } else if (tab === 'inventory') {
-  html += `<section class="card" aria-label="Stock catalogue"><h2>Stock catalogue</h2>${catalogue.map(row).join('')}</section>`;
+  html += `<section class="card" aria-label="Stock catalogue"><h2>Stock catalogue</h2>
+    <div class="row filters">
+      <label>Search supplies<input id="stockSearch" type="search" value="${safe(filters.search)}" placeholder="e.g. rice"></label>
+      <label>Category<select id="stockCategory"><option value="">All categories</option>${categories.map(category =>
+        `<option ${category === filters.category ? 'selected' : ''}>${safe(category)}</option>`
+      ).join('')}</select></label>
+      <label>Stock level<select id="stockStatus">
+        <option value="">Any stock level</option>
+        <option value="needed" ${filters.status === 'needed' ? 'selected' : ''}>Below target</option>
+        <option value="empty" ${filters.status === 'empty' ? 'selected' : ''}>Out of stock</option>
+        <option value="met" ${filters.status === 'met' ? 'selected' : ''}>Target met</option>
+      </select></label>
+      <button type="button" class="secondary" id="clearFilters">Clear filters</button>
+    </div>
+    <p id="stockSummary" class="muted stock-summary" role="status"></p>
+    <div id="stockResults"></div>
+  </section>`;
+} else if (tab === 'shopping') {
+  html += `<section class="card" aria-label="Supplies below target">
+    <h2>Supplies below target</h2>
+    <p class="muted stock-summary">${items.length ? `${money(total)} estimated to reach all targets` : 'All stock targets reached.'}</p>
+    ${items.map(item => `<div class="item">
+      <div class="item-name"><strong>${safe(item.name)}</strong><small>${safe(item.category)} · Priority ${item.priority + 1}</small></div>
+      <div class="item-stock"><small><strong>${need(item)}</strong> to reach target</small>
+        <small>${money(need(item) * item.price)} estimated</small></div>
+      <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
+    </div>`).join('')}
+  </section>`;
 } else if (tab === 'purchases') {
-  html += `<section class="card" aria-label="Purchase history">${purchases.length ? purchases.map(p =>
-    `<div class="item purchase"><span>${safe(p.name)} × ${safe(p.quantity)}</span><strong class="money">${money(p.cost)}</strong></div>`
-  ).join('') : '<p>No purchases recorded yet.</p>'}</section>`;
+  const history = [...purchases].sort((a, b) =>
+    (b.purchasedAt?.toMillis?.() ?? 0) - (a.purchasedAt?.toMillis?.() ?? 0));
+  html += `<section class="card" aria-label="Purchase history"><h2>Purchase history</h2>
+    <p class="stock-summary muted">Spent this month <strong>${money(spent)}</strong> of ${money(settings.monthlyBudget)}</p>
+    ${history.length ? history.map(p => {
+      const date = p.purchasedAt?.toDate?.();
+      return `<div class="item purchase"><span>${safe(p.name)} × ${safe(p.quantity)}
+        ${date ? `<time class="purchase-date muted" datetime="${date.toISOString()}">${purchaseDate.format(date)}</time>` : ''}
+        </span><strong class="money">${money(p.cost)}</strong></div>`;
+    }).join('') : '<p>No purchases recorded yet.</p>'}
+  </section>`;
 } else {
   html += `<div class="card"><form id="settingsForm" class="row">
     <label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="${safe(settings.monthlyBudget)}" required></label>
@@ -195,7 +238,44 @@ if (tab === 'dashboard') {
   </form></div>`;
 }
 $('content').innerHTML=html;
-document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>openRecord(Number(b.dataset.add)));
+if (tab === 'inventory') {
+  const search = $('stockSearch');
+  const category = $('stockCategory');
+  const status = $('stockStatus');
+  const results = $('stockResults');
+  const updateStock = () => {
+    const query = filters.search.trim().toLowerCase();
+    const matching = catalogue.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(query) || item.category.toLowerCase().includes(query);
+      const matchesCategory = !filters.category || item.category === filters.category;
+      const matchesStatus = !filters.status || {
+        needed: need(item) > 0,
+        empty: owned(item) === 0,
+        met: need(item) === 0
+      }[filters.status];
+      return matchesSearch && matchesCategory && matchesStatus;
+    });
+    $('stockSummary').textContent = matching.length
+      ? `Showing ${matching.length} of ${catalogue.length} items`
+      : 'No supplies match these filters.';
+    results.innerHTML = matching.map(row).join('');
+  };
+  search.oninput = () => { filters.search = search.value; updateStock(); };
+  category.onchange = () => { filters.category = category.value; updateStock(); };
+  status.onchange = () => { filters.status = status.value; updateStock(); };
+  $('clearFilters').onclick = () => {
+    filters.search = search.value = '';
+    filters.category = category.value = '';
+    filters.status = status.value = '';
+    updateStock();
+    search.focus();
+  };
+  updateStock();
+}
+$('content').onclick = event => {
+  const button = event.target.closest('button[data-add]');
+  if (button) openRecord(Number(button.dataset.add));
+};
 if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved', 'success')}catch(err){say(err.message, 'error')}};
 }
 let selectedItem = null;
@@ -276,5 +356,5 @@ $('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').fo
   });
   render();
 });
-onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();stock={};purchases=[];$('content').replaceChildren();say('')}});
+onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
 </script></body></html>
