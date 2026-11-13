@@ -28,4 +28,58 @@ const catalog=[
 ].map((a,i)=>({id:i,category:a[0],name:a[1],priority:a[2],target:a[3],price:a[4],reason:a[5]}));
 const key="resilience-stage1-v1";let state;try{state=JSON.parse(localStorage.getItem(key))||{budget:50,months:12,days:14,owned:{},spend:[],page:"Dashboard"}}catch{state={budget:50,months:12,days:14,owned:{},spend:[],page:"Dashboard"}}
 function save(){localStorage.setItem(key,JSON.stringify(state))}function qty(x){return Number(state.owned[x.id]||0)}function need(x){return Math.max(0,target(x)-qty(x))}function target(x){return x.id===0?state.days*15:x.target}function remaining(){return catalog.reduce((s,x)=>s+need(x)*x.price,0)}function completed(){return catalog.filter(x=>need(x)===0).length}function monthSpent(){let m=new Date().toISOString().slice(0,7);return state.spend.filter(x=>x.date.startsWith(m)).reduce((s,x)=>s+x.cost,0)}function cash(){return Math.max(0,state.budget-monthSpent())}function money(n){return "£"+n.toFixed(2)}function ranked(){return catalog.filter(x=>need(x)>0).sort((a,b)=>a.priority-b.priority||a.price-b.price)}function recommendation(){return ranked().find(x=>x.price<=cash())||ranked()[0]}function nav(){document.getElementById("nav").innerHTML=["Dashboard","Roadmap","Shopping","Inventory","Pantry","Settings"].map(x=>'<button class="'+(state.page===x?'active':'secondary')+'" onclick="page(\''+x+'\')">'+x+'</button>').join("")}function page(p){state.page=p;save();render()}function progress(n,d){return '<div class="bar"><span style="width:'+Math.min(100,100*n/d)+'%"></span></div>'}function item(x){return '<div class="item"><div><strong>'+x.name+'</strong><br><span class="tag">P'+x.priority+' · '+x.category+' · '+money(x.price)+' each</span><br><small>'+x.reason+'</small><br><small>Owned '+qty(x)+' / Target '+target(x)+'</small></div><button onclick="add('+x.id+')">+ Add one</button></div>'}function add(id){let x=catalog[id],cost=prompt("Actual price paid in £ (enter 0 if already owned)",String(x.price));if(cost===null)return;cost=Number(cost);if(!Number.isFinite(cost)||cost<0)return alert("Enter a valid amount");state.owned[id]=qty(x)+1;if(cost>0)state.spend.push({date:new Date().toISOString(),id,cost});save();render()}function summary(){let x=recommendation();return '<div class="grid"><div class="card"><small>Catalogue targets achieved</small><div class="value">'+completed()+'/'+catalog.length+'</div>'+progress(completed(),catalog.length)+'</div><div class="card"><small>Available this month</small><div class="value">'+money(cash())+'</div><small>Budget '+money(state.budget)+'</small></div><div class="card"><small>Estimated outstanding cost</small><div class="value">'+money(remaining())+'</div><small>Editable planning estimates, not live prices</small></div></div><div class="card"><h2>What should I buy next?</h2>'+(x?item(x):'<p>All catalogue targets complete.</p>')+'</div><div class="card"><h2>Preparedness progress</h2><p>Current planning target: '+state.days+' days. Inventory coverage is not a guarantee of safety or self-sufficiency.</p>'+progress(completed(),catalog.length)+'</div>'}function shopping(){return '<div class="card"><h2>Priority shopping list</h2><p class="muted">Recommendations prioritise basic safety before optional equipment. Record each purchase to update the plan.</p>'+ranked().map(item).join("")+'</div>'}function inventory(){return '<div class="card"><h2>Inventory</h2>'+catalog.filter(x=>qty(x)>0).map(item).join("")+(completed()===0?'<p>Start by recording equipment you already own.</p>':'')+'</div><div class="card"><h2>All catalogue items</h2>'+catalog.map(item).join("")+'</div>'}function roadmap(){let items=ranked(),budget=state.budget,months=state.months,html='<div class="card"><h2>'+months+'-month roadmap</h2><p>Indicative schedule based on current prices and budget. Already owned items are excluded.</p></div>';let cursor=0;for(let m=1;m<=months;m++){let left=budget,chosen=[];while(cursor<items.length&&items[cursor].price<=left){let x=items[cursor],q=Math.min(need(x),Math.floor(left/x.price));if(q<=0)break;chosen.push(q+' × '+x.name);left-=q*x.price;cursor++}html+='<div class="card"><h2>Month '+m+'</h2><p>'+(chosen.join('<br>')||'Save towards the next priority or review your budget.')+'</p><small>Indicative unspent allocation: '+money(left)+'</small></div>'}return html}function settings(){return '<div class="card"><h2>Household plan</h2><div class="row"><label>Monthly budget (£)<input type="number" min="0" id="budget" value="'+state.budget+'"></label><label>Planning months<select id="months">'+[6,9,12].map(n=>'<option '+(n===state.months?'selected':'')+'>'+n+'</option>').join('')+'</select></label><label>Target days<select id="days">'+[3,7,14,28].map(n=>'<option '+(n===state.days?'selected':'')+'>'+n+'</option>').join('')+'</select></label><button onclick="settingsSave()">Save plan</button></div></div><div class="card"><h2>Data</h2><p class="warning">This prototype stores data only in this browser. It is not password protected or synchronised between devices. Do not enter sensitive household information.</p><button onclick="exportData()">Export JSON backup</button></div>'}function settingsSave(){state.budget=Number(document.getElementById("budget").value);state.months=Number(document.getElementById("months").value);state.days=Number(document.getElementById("days").value);save();render()}function exportData(){let blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="household-resilience-backup.json";a.click();URL.revokeObjectURL(a.href)}function render(){nav();document.getElementById("view").innerHTML=state.page==="Dashboard"?summary():state.page==="Shopping"?shopping():state.page==="Roadmap"?roadmap():state.page==="Inventory"?inventory():state.page==="Pantry"?'<div class="card"><h2>Deep pantry</h2><p>Record shelf-stable food and rotate the oldest stock first.</p>'+catalog.filter(x=>x.category==="Food").map(item).join("")+'</div>':settings()}render();
+</script><script>
+/* Stage 1.1: quantity-aware procurement, rollover planning and backups. */
+function planSchedule(){
+ const pool=ranked().map(x=>({...x,left:need(x)}));
+ const output=[];let carry=0;
+ for(let month=1;month<=state.months;month++){
+  let available=state.budget+(state.rollover===false?0:carry),spent=0,picks=[];
+  for(const x of pool){
+   if(x.left<=0||x.price<=0)continue;
+   let count=Math.min(x.left,Math.floor((available-spent+0.00001)/x.price));
+   if(count>0){picks.push({name:x.name,quantity:count,unit:x.price,priority:x.priority});x.left-=count;spent+=count*x.price}
+  }
+  carry=Math.max(0,available-spent);
+  output.push({month,available,spent,carry,picks});
+ }
+ return {output,unfunded:pool.filter(x=>x.left>0).map(x=>({name:x.name,quantity:x.left,cost:x.left*x.price}))};
+}
+roadmap=function(){
+ const p=planSchedule();
+ let html='<div class="card"><h2>Purchasing roadmap</h2><p>Budget '+money(state.budget)+' per month · '+state.months+' months · '+(state.rollover===false?'No rollover':'Unused funds roll forward')+'</p><p class="muted">Estimated costs only. This schedule uses remaining quantities, prioritises essential items and never knowingly exceeds the monthly available budget.</p></div>';
+ for(const m of p.output){html+='<div class="card"><h2>Month '+m.month+'</h2><small>Available '+money(m.available)+' · Planned '+money(m.spent)+' · Remaining '+money(m.carry)+'</small><div class="bar"><span style="width:'+(m.available?Math.min(100,m.spent/m.available*100):0)+'%"></span></div><p>'+(m.picks.length?m.picks.map(x=>x.quantity+' × '+x.name+' ('+money(x.quantity*x.unit)+')').join('<br>'):'No affordable items this month. Carry funds forward where enabled.')+'</p></div>'}
+ html+='<div class="card"><h2>After the planning period</h2>'+(p.unfunded.length?'<p class="warning">'+p.unfunded.length+' catalogue items remain partly or fully unfunded. Increase the budget, extend the period or review optional items.</p>':'<p>All outstanding catalogue quantities are funded in this indicative plan.</p>')+'</div>';
+ return html;
+};
+function addQuantity(id){
+ let x=catalog[id];let q=prompt('How many units of '+x.name+' are you adding?','1');if(q===null)return;
+ q=Number(q);if(!Number.isFinite(q)||q<=0||!Number.isInteger(q))return alert('Enter a positive whole number');
+ let price=prompt('Total amount paid in £ (0 if already owned)',String((q*x.price).toFixed(2)));if(price===null)return;
+ price=Number(price);if(!Number.isFinite(price)||price<0)return alert('Enter a valid price');
+ state.owned[id]=qty(x)+q;if(price>0)state.spend.push({date:new Date().toISOString(),id,quantity:q,cost:price});save();render();
+}
+add=addQuantity;
+function importData(ev){
+ let file=ev.target.files&&ev.target.files[0];if(!file)return;
+ let reader=new FileReader();reader.onload=()=>{
+  try{let obj=JSON.parse(reader.result);if(typeof obj!=='object'||obj===null||!obj.owned||!Array.isArray(obj.spend)||!Number.isFinite(Number(obj.budget)))throw Error('Invalid backup');
+   if(!confirm('Replace the current browser data with this backup?'))return;
+   state={...state,...obj,page:'Dashboard'};save();render();
+  }catch(e){alert('Unable to import backup: '+e.message)}
+ };reader.readAsText(file);
+}
+const originalSettings=settings;
+settings=function(){
+ return originalSettings().replace('Save plan</button>','Save plan</button><label><input type="checkbox" id="rollover" '+(state.rollover===false?'':'checked')+'> Roll unused funds forward</label>')
+ .replace('<button onclick="exportData()">Export JSON backup</button>','<button onclick="exportData()">Export JSON backup</button> <label>Restore JSON backup<input type="file" accept=".json,application/json" onchange="importData(event)"></label>');
+};
+const originalSettingsSave=settingsSave;
+settingsSave=function(){state.rollover=document.getElementById('rollover').checked;originalSettingsSave()};
+const originalSummary=summary;
+summary=function(){
+ let p=planSchedule(),funded=p.unfunded.length===0;
+ return originalSummary()+'<div class="card"><h2>Budget forecast</h2><p>'+(funded?'Your current budget can fund the remaining catalogue targets within the selected period.':'Your current budget does not cover all catalogue targets within '+state.months+' months.')+'</p><button onclick="page(\'Roadmap\')">View monthly roadmap</button></div>';
+};
+render();
 </script></body></html>
