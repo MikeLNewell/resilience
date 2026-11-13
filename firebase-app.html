@@ -98,7 +98,7 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
   .item-name { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
-</style>
+textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);background:var(--surface);color:var(--ink)}.month-line{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:20px;min-height:20px}#profileForm,#completeMonthForm{display:grid;gap:16px}.print-only{display:none}@media(max-width:570px){.month-line{grid-template-columns:1fr 1fr}.month-line .check-label{grid-column:1/-1}}@media print{header,nav,#message,#recordForm,.no-print,.page-heading,#auth{display:none!important}.print-only{display:block}main,.workspace,.workspace-body,#content{display:block;padding:0;margin:0;max-width:none}.printable-month{border:0;background:white;color:black}body{background:white;color:black}}</style>
 </head>
 <body>
 <header><div class="header-inner">
@@ -117,7 +117,7 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
       <form id="authForm">
         <label>Email<input type="email" id="email" autocomplete="email" required></label>
         <label>Password<input type="password" id="password" autocomplete="current-password" minlength="6" required></label>
-        <div class="row"><button type="submit">Sign in</button><button type="button" class="secondary" id="register">Create account</button></div>
+        <div class="row"><button type="submit">Sign in</button><button type="button" class="secondary" id="register">Create account</button><button type="button" class="secondary" id="resetPassword">Reset password</button></div>
       </form>
     </div>
   </section>
@@ -146,8 +146,8 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
 </main>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
-import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import {Timestamp,getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const $ = id => document.getElementById(id);
 function say(message, tone = '') {
   $('message').dataset.tone = tone;
@@ -173,9 +173,17 @@ catalogue.forEach(item => { item.priority = priorityFor(item); });
 let user=null,settings={},stock={},purchases=[],tab='plan';
 function path(...parts){return doc(db,'households',user.uid,...parts)}
 function safe(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function owned(x){return stock[x.id]?.quantity||0}function target(x){return x.id===0?settings.days*15:x.target}function need(x){return Math.max(0,target(x)-owned(x))}function money(n){return '£'+Number(n).toFixed(2)}
-async function refresh(){let h=await getDoc(path());if(!h.exists()){settings={monthlyBudget:50,months:12,days:14,rollover:true};await setDoc(path(),{...settings,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})}else settings=h.data();
-let [a,b]=await Promise.all([getDocs(collection(db,'households',user.uid,'inventory')),getDocs(collection(db,'households',user.uid,'purchases'))]);stock={};a.forEach(d=>stock[d.id]=d.data());purchases=b.docs.map(d=>d.data());render()}
+function owned(x){return stock[x.id]?.quantity||0}function target(x){if(x.id===0)return settings.days*profile.size*3;if(x.category==='Food')return Math.ceil(x.target*profile.size/5);return x.target}function need(x){return Math.max(0,target(x)-owned(x))}function money(n){return '£'+Number(n).toFixed(2)}
+async function refresh() {
+ const uid=user?.uid;if(!uid)return;
+ const root=doc(db,'households',uid),h=await getDoc(root);
+ if(!h.exists()){settings={monthlyBudget:50,months:12,days:14,rollover:true};await setDoc(root,{...settings,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})}
+ else settings=h.data();
+ if(user?.uid!==uid)return;
+ const [a,b]=await Promise.all([getDocs(collection(root,'inventory')),getDocs(collection(root,'purchases')),loadCalendar(uid)]);
+ if(user?.uid!==uid)return;
+ stock=Object.fromEntries(a.docs.map(d=>[d.id,d.data()]));purchases=b.docs.map(d=>d.data());render();
+}
 const filters = {search: '', category: '', status: ''};
 const categories = [...new Set(catalogue.map(item => item.category))].sort();
 const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', timeZone: 'Europe/London'});
@@ -183,11 +191,11 @@ const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', time
 function monthlyPlan() {
   const basics = coreOrder.map(id => {
     const item = catalogue[id];
-    return {...item, phase: 'Three-day essentials', remaining: Math.max(0, coreTargets[id] - owned(item))};
+    return {...item, phase: 'Three-day essentials', remaining: Math.max(0, coreTarget(id) - owned(item))};
   });
   const extra = catalogue.map(item => ({
     ...item, phase: 'Additional supplies',
-    remaining: Math.max(0, Math.ceil(need(item)) - Math.max(0, (coreTargets[item.id] || 0) - owned(item)))
+    remaining: Math.max(0, Math.ceil(need(item)) - Math.max(0, coreTarget(item.id) - owned(item)))
   })).sort((a, b) => a.priority - b.priority || a.price - b.price);
   const remaining = [...basics, ...extra];
   let balance = 0;
@@ -223,28 +231,7 @@ const row = item => {
 const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', settings: 'Planning settings'};
 let html = `<div class="page-heading"><h1>${tab === 'plan' ? `Your ${settings.months}-month buying plan` : titles[tab]}</h1></div>`;
 if (tab === 'plan') {
-  const plan = monthlyPlan();
-  const planned = plan.flatMap(month => month.lines).reduce((sum, line) => sum + line.cost, 0);
-  html += `<div class="card"><p><strong>${money(settings.monthlyBudget)} each month · ${money(settings.monthlyBudget * settings.months)} over ${settings.months} months</strong></p>
-    <p class="muted">Three-day essentials come first, then additional supplies. A rolling plan based on your current stock and targets. Unspent money carries forward. Prices are estimates. Record purchases to update the remaining plan.</p>
-    <details><summary>How this follows UK guidance</summary>
-      <p>Based on the government Be Ready checklist, checked 13 November 2026.
-      Water uses the existing five-person household assumption: 3 litres each per day for 3 days, or 45 litres for drinking. Cooking and washing need extra water.</p>
-      <p>Food quantities, prices and buying order are this planner’s estimates. Choose familiar ready-to-eat foods that meet your household’s dietary needs and cover three days. The listed tins and packs are a starting shopping allocation; check portions and pack sizes.</p>
-      <p>Check supplies you already own, including blankets and warm clothing. Review medicines, medical supplies, baby products and pet supplies where relevant. Keep paper contacts, important documents and suitable cash available. Check the kit every six months.</p>
-      <p><a href="https://beready.campaign.gov.uk/be-ready-for-emergencies/" target="_blank" rel="noopener">Read the official Be Ready checklist</a></p>
-    </details>
-    <p>Planned purchases ${money(planned)} · Unallocated budget ${money(settings.monthlyBudget * settings.months - planned)}</p>
-    ${total > planned + .01 ? `<p class="muted">${money(total - planned)} of estimated supplies remain beyond this plan.</p>` : ''}
-  </div>
-  ${plan.map(month => `<section class="card"><h2>Month ${month.month}</h2>
-    <p class="muted stock-summary">${money(month.lines.reduce((sum, line) => sum + line.cost, 0))} planned · ${money(month.balance)} carried forward</p>
-    ${month.lines.length ? month.lines.map(line => `<div class="item">
-      <div class="item-name"><strong>${safe(line.name)}</strong><small>${safe(line.phase)} · ${safe(line.category)}</small></div>
-      <div class="item-stock"><span>${line.quantity} × ${money(line.price)}</span><strong>${money(line.cost)}</strong></div>
-      <button type="button" data-add="${line.id}" data-quantity="${line.quantity}" aria-label="Record ${safe(line.name)}">Bought</button>
-    </div>`).join('') : '<p>Keep this month’s ${money(settings.monthlyBudget)} in reserve. No further catalogue purchases are allocated.</p>'}
-  </section>`).join('')}`;
+  html += renderCalendar() + renderReview();
 } else if (tab === 'dashboard') {
   const completed = catalogue.length - items.length;
   html += `<div class="grid">
@@ -296,6 +283,7 @@ if (tab === 'plan') {
     }).join('') : '<p>No purchases recorded yet.</p>'}
   </section>`;
 } else {
+  html += renderHouseholdSettings();
   html += `<div class="card"><form id="settingsForm" class="row">
     <label>Monthly budget (£)<input id="budget" type="number" min="0" step=".01" value="${safe(settings.monthlyBudget)}" required></label>
     <label>Planning months<select id="months">${[6, 9, 12].map(n => `<option ${settings.months === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -304,6 +292,8 @@ if (tab === 'plan') {
   </form></div>`;
 }
 $('content').innerHTML=html;
+bindCalendar();
+bindProfile();
 if (tab === 'inventory') {
   const search = $('stockSearch');
   const category = $('stockCategory');
@@ -340,7 +330,7 @@ if (tab === 'inventory') {
 }
 $('content').onclick = event => {
   const button = event.target.closest('button[data-add]');
-  if (button) openRecord(Number(button.dataset.add), Number(button.dataset.quantity || 1));
+  if (button && !busy) openRecord(Number(button.dataset.add), Number(button.dataset.quantity || 1));
 };
 if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved', 'success')}catch(err){say(err.message, 'error')}};
 }
@@ -410,10 +400,11 @@ async function record(id, quantity, cost) {
     say('Inventory saved. Refresh failed: ' + error.message, 'error');
   }
 }
-$('authForm').onsubmit=async e=>{e.preventDefault();say('Signing in…');try{await signInWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message, 'error')}};
-$('register').onclick=async()=>{say('Creating account…');try{await createUserWithEmailAndPassword(auth,$('email').value,$('password').value)}catch(err){say(err.message, 'error')}};
-$('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = () => {
-  if ($('recordSave').disabled || !$('content').firstElementChild) return;
+$('authForm').onsubmit=async e=>{e.preventDefault();const email=validatedEmail();if(!email)return;say('Signing in…');try{await signInWithEmailAndPassword(auth,email,$('password').value)}catch(error){authError(error)}};
+$('register').onclick=async()=>{const email=validatedEmail();if(!email)return;if(!$('password').value||!$('password').checkValidity()){$('password').reportValidity();return;}say('Creating account…');try{await createUserWithEmailAndPassword(auth,email,$('password').value)}catch(error){authError(error)}};
+$('resetPassword').onclick=async()=>{const email=validatedEmail();if(!email)return;$('resetPassword').disabled=true;try{await sendPasswordResetEmail(auth,email);say('If the account exists, check your email for a password-reset link.','success')}catch(error){authError(error)}finally{$('resetPassword').disabled=false}};
+$('logout').onclick=()=>{if(!busy)signOut(auth)};document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = () => {
+  if (busy || $('recordSave').disabled || !$('content').firstElementChild) return;
   closeRecord();
   tab = b.dataset.tab;
   document.querySelectorAll('[data-tab]').forEach(button => {
@@ -422,5 +413,263 @@ $('logout').onclick=()=>signOut(auth);document.querySelectorAll('[data-tab]').fo
   });
   render();
 });
-onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
+const defaultProfile = {size:5, children:0, babies:0, pets:false, medical:false, diet:'No preference', notes:''};
+let profile = {...defaultProfile}, savedMonths = [], completions = {}, review = null;
+let selectedMonth = '', busy = false;
+const monthLabel = key => new Intl.DateTimeFormat('en-GB', {month:'long', year:'numeric',timeZone:'UTC'}).format(new Date(key + '-01T12:00:00Z'));
+function monthKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB',{year:'numeric',month:'2-digit',timeZone:'Europe/London'}).formatToParts(date);
+  return parts.find(p=>p.type==='year').value + '-' + parts.find(p=>p.type==='month').value;
+}
+function sixMonthsFrom(date) {
+  const next = new Date(date);
+  const day = next.getUTCDate();
+  next.setUTCDate(1);
+  next.setUTCMonth(next.getUTCMonth() + 6);
+  const last = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth()+1, 0)).getUTCDate();
+  next.setUTCDate(Math.min(day,last));
+  return next;
+}
+function coreTarget(id) {
+  if (id === 0) return profile.size * 9;
+  if ([6,19,20].includes(id)) return Math.ceil(coreTargets[id] * profile.size / 5);
+  return coreTargets[id] || 0;
+}
+function householdChecks() {
+  const checks = ['Check food portions, pack sizes and expiry dates against your household’s needs.',
+    'Keep paper emergency contacts and copies of important documents available.'];
+  if (profile.diet !== 'No preference') checks.push('Choose ready-to-eat foods suitable for ' + profile.diet.toLowerCase() + ' diets.');
+  if (profile.children) checks.push('Include familiar foods and warm clothes for ' + profile.children + ' children.');
+  if (profile.babies) checks.push('Check nappies, wipes and your usual baby feeding supplies for ' + profile.babies + ' babies.');
+  if (profile.pets) checks.push('Set aside suitable pet food, drinking water and any regular pet supplies.');
+  if (profile.medical) checks.push('Check essential medicines, medical supplies and any equipment backup arrangements.');
+  if (profile.notes) checks.push(profile.notes);
+  return '<ul>' + checks.map(text=>'<li>'+safe(text)+'</li>').join('') + '</ul>';
+}
+async function loadCalendar(uid) {
+  const root = doc(db,'households',uid);
+  const [p,m,c,r] = await Promise.all([
+    getDoc(doc(root,'preferences','profile')),
+    getDocs(collection(root,'plans')),
+    getDocs(collection(root,'completions')),
+    getDoc(doc(root,'preferences','review'))
+  ]);
+  if (user?.uid !== uid) return;
+  profile = {...defaultProfile,...(p.exists()?p.data():{})};
+  savedMonths = m.docs.map(d=>({key:d.id,...d.data()})).sort((a,b)=>a.key.localeCompare(b.key));
+  completions = Object.fromEntries(c.docs.map(d=>[d.id,d.data()]));
+  review = r.exists()?r.data():null;
+  if (!savedMonths.some(m=>m.key===selectedMonth)) {
+    selectedMonth = savedMonths.find(m=>m.key===monthKey())?.key || savedMonths.find(m=>!completions[m.key])?.key || savedMonths[0]?.key || '';
+  }
+}
+async function createCalendar() {
+  const uid = user.uid, root = doc(db,'households',uid);
+  const plan = monthlyPlan(), start = monthKey();
+  const [year,month] = start.split('-').map(Number);
+  const refs = plan.map((_,i)=>doc(root,'plans',monthKey(new Date(Date.UTC(year,month-1+i,15)))));
+  const profileRef = doc(root,'preferences','profile'), reviewRef = doc(root,'preferences','review');
+  await runTransaction(db,async tx=>{
+    const storedProfile = await tx.get(profileRef);
+    const existing = await Promise.all(refs.map(ref=>tx.get(ref)));
+    const existingReview = await tx.get(reviewRef);
+    const currentStock = await Promise.all(catalogue.map(item=>tx.get(doc(root,'inventory',String(item.id)))));
+    if(currentStock.some((snapshot,index)=>(snapshot.exists()?snapshot.data().quantity:0)!==owned(catalogue[index]))) throw Error('Inventory changed in another window. Reload before creating the plan.');
+    if (existing.some(s=>s.exists())) throw Error('A calendar plan already exists. Reload to see it.');
+    const currentProfile = {...defaultProfile,...(storedProfile.exists()?storedProfile.data():{})};
+    if (JSON.stringify(Object.fromEntries(Object.keys(defaultProfile).map(k=>[k,currentProfile[k]]))) !==
+        JSON.stringify(Object.fromEntries(Object.keys(defaultProfile).map(k=>[k,profile[k]])))) {
+      throw Error('Household settings changed in another window. Reload before creating the plan.');
+    }
+    plan.forEach((month,i)=>tx.set(refs[i], {
+      lines:month.lines.reduce((result,line)=>{const prev=result[line.id]||{quantity:0,cost:0};result[line.id]={quantity:prev.quantity+line.quantity,cost:Math.round((prev.cost+line.cost)*100)/100};return result},{}),
+      budget:50, carry:month.balance, householdSize:profile.size, createdAt:serverTimestamp()
+    }));
+    if (!existingReview.exists()) tx.set(reviewRef,{
+      nextReview:Timestamp.fromDate(sixMonthsFrom(new Date())), updatedAt:serverTimestamp()
+    });
+  });
+  await refresh();
+}
+function completionInputs(month) {
+  return Object.entries(month.lines).map(([id,line])=>{
+    const item=catalogue[Number(id)];
+    return `<div class="month-line">
+      <label class="check-label"><input type="checkbox" data-include="${id}" checked> ${safe(item.name)}</label>
+      <label>Quantity<input type="number" min="1" max="10000" step="1" value="${line.quantity}" data-month-quantity="${id}" required></label>
+      <label>Total paid (£)<input type="number" min="0" max="100000" step=".01" value="${line.cost.toFixed(2)}" data-month-cost="${id}" required></label>
+    </div>`;
+  }).join('');
+}
+async function completeCalendarMonth(key, lines) {
+  const uid=user.uid, root=doc(db,'households',uid);
+  const planRef=doc(root,'plans',key), completionRef=doc(root,'completions',key);
+  await runTransaction(db,async tx=>{
+    const planSnapshot=await tx.get(planRef);
+    const done=await tx.get(completionRef);
+    if (done.exists()) return;
+    if (!planSnapshot.exists()) throw Error('This month has no saved plan.');
+    const planned=planSnapshot.data().lines;
+    for(const [id,line] of Object.entries(lines)) {
+      if (!planned[id] || !Number.isSafeInteger(line.quantity) || line.quantity<1 || line.quantity>10000 ||
+          !Number.isFinite(line.cost) || line.cost<0 || line.cost>100000) throw Error('Check the purchase quantities and costs.');
+    }
+    const entries=Object.entries(lines);
+    const stocks=await Promise.all(entries.map(([id])=>tx.get(doc(root,'inventory',id))));
+    entries.forEach(([id,line],index)=>{
+      const item=catalogue[Number(id)], previous=stocks[index].exists()?stocks[index].data().quantity:0;
+      tx.set(doc(root,'inventory',id),{name:item.name,category:item.category,quantity:previous+line.quantity,updatedAt:serverTimestamp()},{merge:true});
+      if (line.cost>0) tx.set(doc(root,'purchases','month-'+key+'-'+id),{
+        itemId:Number(id), name:item.name, quantity:line.quantity, cost:line.cost, purchasedAt:serverTimestamp()
+      });
+    });
+    tx.set(completionRef,{lines,totalCost:Math.round(entries.reduce((sum,[,line])=>sum+line.cost*100,0))/100,completedAt:serverTimestamp()});
+  });
+  await refresh();
+}
+function renderCalendar() {
+  if (!savedMonths.length) return `<section class="card"><h2>Start your calendar plan</h2>
+    <p>£50 per month for 12 months, starting ${monthLabel(monthKey())}. Your saved stock is deducted when the plan is created.</p>
+    <p>Household size: ${profile.size}. Check household settings before saving your schedule.</p>
+    ${householdChecks()}
+    <button type="button" id="createCalendar">Create my 12-month plan</button></section>`;
+  const month=savedMonths.find(m=>m.key===selectedMonth), done=completions[selectedMonth];
+  const total=Object.values(month.lines).reduce((sum,line)=>sum+line.cost,0);
+  const actual=Object.values(completions).reduce((sum,c)=>sum+c.totalCost,0);
+  return `<section class="card no-print">
+    <p><strong>£50 monthly · £600 for the year</strong></p>
+    <p>${monthLabel(savedMonths[0].key)} to ${monthLabel(savedMonths.at(-1).key)} · ${Object.keys(completions).length} of 12 months completed</p>
+    <p>Recorded through monthly completion: ${money(actual)}. Inventory entries recorded separately are shown in Purchases.</p>
+    <p class="muted">Dates and allocations stay fixed. Untick items already recorded or not bought before completing a month. Skipped items remain visible in its record.</p>
+    <label>Shopping month<select id="calendarMonth">${savedMonths.map(m=>`<option value="${m.key}" ${m.key===selectedMonth?'selected':''}>${monthLabel(m.key)}${completions[m.key]?' — completed':''}</option>`).join('')}</select></label>
+  </section>
+  <section class="card printable-month">
+    <h2>${monthLabel(month.key)}</h2>
+    <p>Estimated purchases ${money(total)} · Planned carry-forward ${money(month.carry)}</p>
+    <p class="muted">Based on ${month.householdSize} people when this schedule was created. Prices are estimates.</p>
+    <div class="print-only">${Object.entries(month.lines).map(([id,line])=>`<p>☐ ${safe(catalogue[Number(id)].name)} — ${line.quantity} · ${money(line.cost)}</p>`).join('')}</div>
+    <div class="no-print">${done ? `<p><strong>Completed · ${money(done.totalCost)} recorded</strong></p>
+      ${Object.entries(month.lines).map(([id])=>`<p>${safe(catalogue[Number(id)].name)} — ${done.lines[id] ? `${done.lines[id].quantity} bought · ${money(done.lines[id].cost)}` : 'Skipped / already recorded'}</p>`).join('')}`
+      : `<form id="completeMonthForm">
+        <p>Check what you bought and adjust the quantities and total costs.</p>
+        ${completionInputs(month) || '<p>No purchases allocated. Keep this month’s budget in reserve.</p>'}
+        <p id="monthActualTotal" role="status">Selected total ${money(total)}</p>
+        <button type="submit">Complete ${monthLabel(month.key)}</button>
+      </form>`}
+      <button type="button" class="secondary" id="printMonth">Print shopping list / save PDF</button>
+    </div>
+  </section>
+  <section class="card no-print"><h2>Household checks</h2>${householdChecks()}
+    <p><a href="https://beready.campaign.gov.uk/be-ready-for-emergencies/">Official UK Be Ready checklist</a></p>
+    <p>Three-day drinking water target: ${profile.size*9} litres. Cooking and washing need extra water. Food quantities and prices are planning estimates; check suitable portions and pack sizes.</p>
+  </section>`;
+}
+function renderReview() {
+  if (!review) return '';
+  const due=review.nextReview.toDate(), overdue=due<=new Date();
+  return `<section class="card no-print"><h2>${overdue?'Your supplies review is due':'Six-month supplies review'}</h2>
+    <p>Next review ${purchaseDate.format(due)}. Check expiry dates, drinking water, batteries and changes in household needs.</p>
+    <div class="row"><button type="button" id="reviewDone">I’ve reviewed my supplies</button>
+    <button type="button" id="downloadReminder" class="secondary">Add reminder to calendar</button></div>
+    <p class="muted">The reminder appears here. Download the calendar event to receive an alert in your calendar app.</p>
+  </section>`;
+}
+function downloadReviewReminder() {
+  const date=review.nextReview.toDate().toISOString().slice(0,10).replaceAll('-','');
+  const text=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Household Resilience//Supplies review//EN',
+    'BEGIN:VEVENT','UID:household-review-'+date+'@resilience.newell.phd',
+    'DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''),
+    'DTSTART;VALUE=DATE:'+date,'SUMMARY:Review household emergency supplies',
+    'DESCRIPTION:Check expiry dates\, water\, batteries and household needs.',
+    'BEGIN:VALARM','TRIGGER:-P1D','ACTION:DISPLAY','DESCRIPTION:Review household supplies','END:VALARM',
+    'END:VEVENT','END:VCALENDAR',''].join('\r\n');
+  const url=URL.createObjectURL(new Blob([text],{type:'text/calendar'}));
+  const link=document.createElement('a'); link.href=url;link.download='household-supplies-review.ics';link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function runAction(button, action, success) {
+  if(busy) return;
+  busy=true; button.disabled=true; say('Saving…');
+  try { await action(); say(success,'success'); }
+  catch(error) { say(error.message,'error'); }
+  finally { busy=false; button.disabled=false; }
+}
+function bindCalendar() {
+  if($('createCalendar')) $('createCalendar').onclick=e=>runAction(e.currentTarget,createCalendar,'Calendar plan saved');
+  if($('calendarMonth')) $('calendarMonth').onchange=e=>{selectedMonth=e.target.value;render();};
+  if($('printMonth')) $('printMonth').onclick=()=>window.print();
+  if($('reviewDone')) $('reviewDone').onclick=e=>runAction(e.currentTarget,async()=>{
+    await setDoc(path('preferences','review'),{nextReview:Timestamp.fromDate(sixMonthsFrom(new Date())),updatedAt:serverTimestamp()});
+    await refresh();
+  },'Next review scheduled for six months from today');
+  if($('downloadReminder')) $('downloadReminder').onclick=downloadReviewReminder;
+  const form=$('completeMonthForm');
+  if(form) {
+    const selected=()=>Object.fromEntries([...form.querySelectorAll('[data-include]')].filter(el=>el.checked).map(el=>{
+      const id=el.dataset.include;
+      return [id,{quantity:form.querySelector('[data-month-quantity="'+id+'"]').valueAsNumber,cost:form.querySelector('[data-month-cost="'+id+'"]').valueAsNumber}];
+    }));
+    form.onchange=()=>{
+      form.querySelectorAll('[data-include]').forEach(el=>{
+        form.querySelector('[data-month-quantity="'+el.dataset.include+'"]').disabled=!el.checked;
+        form.querySelector('[data-month-cost="'+el.dataset.include+'"]').disabled=!el.checked;
+      });
+      const total=Object.values(selected()).reduce((sum,line)=>sum+(line.cost||0),0);
+      $('monthActualTotal').textContent='Selected total '+money(total)+(total>50?' — above the £50 monthly contribution':'');
+    };
+    form.onsubmit=e=>{
+      e.preventDefault();
+      const lines=selected(), key=selectedMonth;
+      runAction(form.querySelector('[type="submit"]'),()=>completeCalendarMonth(key,lines),'Month completed and inventory updated');
+    };
+  }
+}
+function renderHouseholdSettings() {
+  const diets=['No preference','Vegetarian','Vegan','Gluten-free','Dairy-free'];
+  return `<section class="card"><h2>Your household</h2><form id="profileForm">
+    <div class="row">
+      <label>People in household<input id="householdSize" type="number" min="1" max="20" value="${profile.size}" required></label>
+      <label>Children (including babies)<input id="householdChildren" type="number" min="0" max="20" value="${profile.children}" required></label>
+      <label>Babies<input id="householdBabies" type="number" min="0" max="20" value="${profile.babies}" required></label>
+      <label>Food preference<select id="householdDiet">${diets.map(d=>`<option ${profile.diet===d?'selected':''}>${d}</option>`).join('')}</select></label>
+    </div>
+    <label class="check-label"><input id="householdPets" type="checkbox" ${profile.pets?'checked':''}> Include pet supply checks</label>
+    <label class="check-label"><input id="householdMedical" type="checkbox" ${profile.medical?'checked':''}> Include medicine and equipment checks</label>
+    <label>Food substitutions, allergies or household shopping notes<textarea id="householdNotes" maxlength="1000" rows="3">${safe(profile.notes)}</textarea></label>
+    <p class="muted">Household size scales water and food targets. Preferences and notes appear alongside the list for choosing suitable products. Saved calendar allocations stay fixed; check portions if household needs change.</p>
+    <button>Save household</button>
+  </form></section>`;
+}
+function bindProfile() {
+  if(!$('profileForm'))return;
+  $('profileForm').onsubmit=e=>{
+    e.preventDefault();
+    const p={size:$('householdSize').valueAsNumber,children:$('householdChildren').valueAsNumber,babies:$('householdBabies').valueAsNumber,
+      pets:$('householdPets').checked,medical:$('householdMedical').checked,diet:$('householdDiet').value,notes:$('householdNotes').value.trim()};
+    if(p.children>p.size || p.babies>p.children) {say('Children must fit within the household total, and babies within the number of children.','error');return;}
+    runAction(e.target.querySelector('button'),async()=>{
+      await setDoc(path('preferences','profile'),{...p,updatedAt:serverTimestamp()});await refresh();
+    },'Household settings saved');
+  };
+}
+function validatedEmail() {
+  const field=$('email');
+  field.value=field.value.trim();
+  if(!field.value || !field.checkValidity()) {
+    say('Enter a complete email address, such as name@example.com.','error');field.reportValidity();return null;
+  }
+  return field.value;
+}
+function authError(error) {
+  const messages={
+    'auth/invalid-email':'Check the email address. Use the full address, such as name@example.com.',
+    'auth/email-already-in-use':'An account already uses this email. Sign in or reset your password.',
+    'auth/weak-password':'Choose a password with at least six characters.',
+    'auth/invalid-credential':'The email or password was not recognised. Try again or reset your password.',
+    'auth/too-many-requests':'Too many attempts. Please wait a few minutes and try again.',
+    'auth/network-request-failed':'Unable to connect. Check your connection and try again.'
+  };
+  say(messages[error.code] || 'Unable to complete this request. Please try again.','error');
+}
+onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();profile={...defaultProfile};savedMonths=[];completions={};review=null;selectedMonth='';stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
 </script></body></html>
