@@ -98,7 +98,7 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
   .item-name { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
-textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);background:var(--surface);color:var(--ink)}.month-line{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:20px;min-height:20px}#profileForm,#completeMonthForm{display:grid;gap:16px}.print-only{display:none}@media(max-width:570px){.month-line{grid-template-columns:1fr 1fr}.month-line .check-label{grid-column:1/-1}}@media print{header,nav,#message,#recordForm,.no-print,.page-heading,#auth{display:none!important}.print-only{display:block}main,.workspace,.workspace-body,#content{display:block;padding:0;margin:0;max-width:none}.printable-month{border:0;background:white;color:black}body{background:white;color:black}}</style>
+textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);background:var(--surface);color:var(--ink)}.month-line{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:20px;min-height:20px}#profileForm,#completeMonthForm{display:grid;gap:16px}.print-only{display:none}@media(max-width:570px){.month-line{grid-template-columns:1fr 1fr}.month-line .check-label{grid-column:1/-1}}@media print{header,nav,#message,#recordForm,.no-print,.page-heading,#auth{display:none!important}.print-only{display:block}main,.workspace,.workspace-body,#content{display:block;padding:0;margin:0;max-width:none}.printable-month{border:0;background:white;color:black}body{background:white;color:black}}.price-links{line-height:2.2}.price-links a{display:inline-block;margin-right:9px}.price-table{width:100%;border-collapse:collapse}.price-table th,.price-table td{text-align:left;padding:9px;border-bottom:1px solid var(--line)}.price-table th{font-weight:600}.price-table td:last-child,.price-table th:last-child{text-align:right}@media(max-width:570px){.price-table{font-size:.82rem}}</style>
 </head>
 <body>
 <header><div class="header-inner">
@@ -128,6 +128,7 @@ textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);ba
       <button type="button" data-tab="inventory">Inventory</button>
       <button type="button" data-tab="shopping">Shopping list</button>
       <button type="button" data-tab="purchases">Purchases</button>
+      <button type="button" data-tab="prices">Price finder</button>
       <button type="button" data-tab="settings">Settings</button>
     </nav>
     <div class="workspace-body">
@@ -145,6 +146,7 @@ textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);ba
   </section>
 </main>
 <script type="module">
+import {createPriceFinder} from './price-finder.js';
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {Timestamp,getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
@@ -185,6 +187,7 @@ async function refresh() {
  stock=Object.fromEntries(a.docs.map(d=>[d.id,d.data()]));purchases=b.docs.map(d=>d.data());render();
 }
 const filters = {search: '', category: '', status: ''};
+const priceFinder=createPriceFinder({catalogue,getNeed:need,getUser:()=>user,safe,money});
 const categories = [...new Set(catalogue.map(item => item.category))].sort();
 const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', timeZone: 'Europe/London'});
 
@@ -225,10 +228,10 @@ const row = item => {
     <div class="item-stock"><small><strong>${safe(quantity)}</strong> of ${safe(goal)} in stock</small>
       <progress class="progress" aria-label="${safe(item.name)} stock target" value="${Math.min(quantity, goal)}" max="${goal}"></progress>
     </div>
-    <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
+    <button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
   </div>`;
 };
-const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', settings: 'Planning settings'};
+const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', prices: 'Price finder', settings: 'Planning settings'};
 let html = `<div class="page-heading"><h1>${tab === 'plan' ? `Your ${settings.months}-month buying plan` : titles[tab]}</h1></div>`;
 if (tab === 'plan') {
   html += renderCalendar() + renderReview();
@@ -267,9 +270,11 @@ if (tab === 'plan') {
       <div class="item-name"><strong>${safe(item.name)}</strong><small>${safe(item.category)} · Priority ${item.priority + 1}</small></div>
       <div class="item-stock"><small><strong>${need(item)}</strong> to reach target</small>
         <small>${money(need(item) * item.price)} estimated</small></div>
-      <button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
+      <button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
     </div>`).join('')}
   </section>`;
+} else if (tab === 'prices') {
+  html += priceFinder.render();
 } else if (tab === 'purchases') {
   const history = [...purchases].sort((a, b) =>
     (b.purchasedAt?.toMillis?.() ?? 0) - (a.purchasedAt?.toMillis?.() ?? 0));
@@ -294,6 +299,7 @@ if (tab === 'plan') {
 $('content').innerHTML=html;
 bindCalendar();
 bindProfile();
+if(tab === 'prices')priceFinder.bind();
 if (tab === 'inventory') {
   const search = $('stockSearch');
   const category = $('stockCategory');
@@ -329,6 +335,8 @@ if (tab === 'inventory') {
   updateStock();
 }
 $('content').onclick = event => {
+  const priceButton=event.target.closest('button[data-price]');
+  if(priceButton){priceFinder.show(Number(priceButton.dataset.price));return;}
   const button = event.target.closest('button[data-add]');
   if (button && !busy) openRecord(Number(button.dataset.add), Number(button.dataset.quantity || 1));
 };
