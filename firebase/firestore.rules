@@ -3,7 +3,86 @@ service cloud.firestore {
  match /databases/{database}/documents {
   function signedIn() { return request.auth != null; }
   function owner(uid) { return signedIn() && request.auth.uid == uid; }
+  function validLine(lines,id) {
+    return !(id in lines) || (lines[id] is map && lines[id].keys().hasAll(['quantity','cost'])
+      && lines[id].keys().hasOnly(['quantity','cost']) && lines[id].quantity is int
+      && lines[id].quantity > 0 && lines[id].quantity <= 10000
+      && lines[id].cost is number && lines[id].cost >= 0 && lines[id].cost <= 100000);
+  }
+  function validLines(lines) {
+    return lines is map && lines.keys().hasOnly(['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20'])
+      && validLine(lines,'0')
+      && validLine(lines,'1')
+      && validLine(lines,'2')
+      && validLine(lines,'3')
+      && validLine(lines,'4')
+      && validLine(lines,'5')
+      && validLine(lines,'6')
+      && validLine(lines,'7')
+      && validLine(lines,'8')
+      && validLine(lines,'9')
+      && validLine(lines,'10')
+      && validLine(lines,'11')
+      && validLine(lines,'12')
+      && validLine(lines,'13')
+      && validLine(lines,'14')
+      && validLine(lines,'15')
+      && validLine(lines,'16')
+      && validLine(lines,'17')
+      && validLine(lines,'18')
+      && validLine(lines,'19')
+      && validLine(lines,'20');
+  }
+  function validProfile(d) {
+    return d.keys().hasAll(['size','children','babies','pets','medical','diet','notes','updatedAt'])
+      && d.keys().hasOnly(['size','children','babies','pets','medical','diet','notes','updatedAt'])
+      && d.size is int && d.size >= 1 && d.size <= 20
+      && d.children is int && d.children >= 0 && d.children <= d.size
+      && d.babies is int && d.babies >= 0 && d.babies <= d.children
+      && d.pets is bool && d.medical is bool
+      && d.diet in ['No preference','Vegetarian','Vegan','Gluten-free','Dairy-free']
+      && d.notes is string && d.notes.size() <= 1000 && d.updatedAt == request.time;
+  }
+  function validReview(d) {
+    return d.keys().hasAll(['nextReview','updatedAt'])
+      && d.keys().hasOnly(['nextReview','updatedAt'])
+      && d.nextReview is timestamp && d.nextReview > request.time
+      && d.nextReview < request.time + duration.value(190,'d')
+      && d.updatedAt == request.time;
+  }
+  function validPlan(d) {
+    return d.keys().hasAll(['lines','budget','carry','householdSize','createdAt'])
+      && d.keys().hasOnly(['lines','budget','carry','householdSize','createdAt'])
+      && validLines(d.lines) && d.budget is number && d.budget >= 0 && d.budget <= 100000
+      && d.carry is number && d.carry >= 0 && d.carry <= 1200000
+      && d.householdSize is int && d.householdSize >= 1 && d.householdSize <= 20
+      && d.createdAt == request.time;
+  }
+  function validCompletion(d) {
+    return d.keys().hasAll(['lines','totalCost','completedAt'])
+      && d.keys().hasOnly(['lines','totalCost','completedAt']) && validLines(d.lines)
+      && d.totalCost is number && d.totalCost >= 0 && d.totalCost <= 2100000
+      && d.completedAt == request.time;
+  }
   match /households/{uid} {
+   match /preferences/{preference} {
+     allow read: if owner(uid);
+     allow create, update: if owner(uid) && (
+       (preference == 'profile' && validProfile(request.resource.data)) ||
+       (preference == 'review' && validReview(request.resource.data)));
+   }
+   match /plans/{month} {
+     allow read: if owner(uid);
+     allow create: if owner(uid) && month.matches('20[0-9]{2}-(0[1-9]|1[0-2])')
+       && validPlan(request.resource.data);
+   }
+   match /completions/{month} {
+     allow read: if owner(uid);
+     allow create: if owner(uid) && validCompletion(request.resource.data)
+       && exists(/databases/$(database)/documents/households/$(uid)/plans/$(month))
+       && request.resource.data.lines.keys().hasOnly(
+          get(/databases/$(database)/documents/households/$(uid)/plans/$(month)).data.lines.keys());
+   }
    allow read, delete: if owner(uid);
    allow create: if owner(uid) && request.resource.data.keys().hasOnly(['monthlyBudget','months','days','rollover','createdAt','updatedAt']);
    allow update: if owner(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['monthlyBudget','months','days','rollover','updatedAt']);
