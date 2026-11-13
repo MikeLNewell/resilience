@@ -4,7 +4,7 @@ export function createPriceFinder({catalogue,getNeed,getUser,safe,money}) {
   let selected = 0;
   const retailers = ['Aldi','Lidl','Tesco','Asda','Morrisons',"Sainsbury's",'Iceland','Ocado','Amazon','Argos','B&Q','Screwfix'];
   const supermarkets = new Set(retailers.slice(0,8));
-  const blocked = /^(Drinking water|Carbon monoxide alarm|Smoke alarm|First aid kit|Spare batteries|Hand sanitiser|Ready-to-eat tinned food|Tinned beans|Rice|Pasta|UHT milk|Dried fruit|Wet wipes|Toilet paper)/i;
+  const blocked = /^(Drinking water|Carbon monoxide alarm|Smoke alarm|First aid kit|Power bank|Spare batteries|Hand sanitiser|Ready-to-eat tinned food|Tinned beans|Rice|Pasta|UHT milk|Dried fruit|Wet wipes|Toilet paper)/i;
   const allowed = item => !blocked.test(item.name) && !['Food','Water','Medical','Hygiene'].includes(item.category);
   const itemSearch = item => item.name.replace(/\s*\([^)]*\)/g,'').replace(/^\s+|\s+$/g,'');
   const id = 'resilience-price-quotes-v1-';
