@@ -180,7 +180,7 @@ async function refresh() {
  if(!h.exists()){settings={monthlyBudget:50,months:12,days:14,rollover:true};await setDoc(root,{...settings,createdAt:serverTimestamp(),updatedAt:serverTimestamp()})}
  else settings=h.data();
  if(user?.uid!==uid)return;
- const [a,b]=await Promise.all([getDocs(collection(root,'inventory')),getDocs(collection(root,'purchases')),loadCalendar(uid)]);
+ const [a,b]=await Promise.all([getDocs(collection(root,'inventory')),getDocs(collection(root,'purchases')),loadCalendar(uid).catch(err=>{if(err.code==='permission-denied'){say('Additional calendar permissions are not yet published in Firebase. Inventory remains available.','error');return;}throw err;})]);
  if(user?.uid!==uid)return;
  stock=Object.fromEntries(a.docs.map(d=>[d.id,d.data()]));purchases=b.docs.map(d=>d.data());render();
 }
@@ -483,7 +483,7 @@ async function createCalendar() {
     }
     plan.forEach((month,i)=>tx.set(refs[i], {
       lines:month.lines.reduce((result,line)=>{const prev=result[line.id]||{quantity:0,cost:0};result[line.id]={quantity:prev.quantity+line.quantity,cost:Math.round((prev.cost+line.cost)*100)/100};return result},{}),
-      budget:50, carry:month.balance, householdSize:profile.size, createdAt:serverTimestamp()
+      budget:settings.monthlyBudget, carry:month.balance, householdSize:profile.size, createdAt:serverTimestamp()
     }));
     if (!existingReview.exists()) tx.set(reviewRef,{
       nextReview:Timestamp.fromDate(sixMonthsFrom(new Date())), updatedAt:serverTimestamp()
