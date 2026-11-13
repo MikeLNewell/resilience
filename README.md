@@ -27,7 +27,9 @@ Do not publish service-account keys, private tokens or household data in the rep
 
 ## Development status
 
-A fuller household profile, persisted purchasing calendar, completed-month receipts, six-month reviews and password reset were drafted in a previous local development session but were not committed to the current default branch. They must be recovered or rebuilt, tested together with updated security rules, and then deployed. Do not assume those features are live.
+The household profile, saved purchasing calendar, monthly completion receipts, six-month stock review and password-reset functionality are now committed on the default branch. Corresponding access rules are in `firebase/firestore.rules`. These rules MUST be published to the Firebase project separately: pushing to GitHub or deploying Netlify does not publish Firestore rules. The existing inventory remains usable if calendar-rule access is denied. JavaScript syntax has been checked, but end-to-end browser/Auth/Firestore emulator testing and confirmation of the live Netlify deployment remain outstanding.
+
+To publish, open Firebase Console → project `newell-household-resilience` → Firestore Database → Rules, paste the repository's full `firebase/firestore.rules`, inspect and publish. Confirm Email/Password is enabled in Firebase Authentication and add `resilience.newell.phd` to authorised domains if needed. Test by signing in, saving profile, creating the fixed schedule and completing one month using a dedicated test account.
 
 ## Limitations
 
