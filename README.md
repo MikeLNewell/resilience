@@ -34,3 +34,11 @@ To publish, open Firebase Console → project `newell-household-resilience` → 
 ## Limitations
 
 The plan is indicative and does not guarantee that supplies are sufficient for a particular emergency. The original legacy page uses localStorage and does not synchronise.
+
+## Price Finder
+
+The Price Finder tab offers per-item search links to UK supermarkets, shops and second-hand marketplaces. It separates items appropriate for second-hand sourcing from food, water, medical supplies, safety alarms and batteries, which should be purchased new from reliable retailers. Used listings must always be checked for condition and safety.
+
+Users can save verified retailer quotations, quantity/pack equivalents and delivery costs. Comparisons use the total delivered price per equivalent catalogue unit. The basket table reports how many outstanding items each supermarket covers; partial subtotals are **not** a like-for-like ranking of whole baskets. The app never invents or displays purported live prices and does not automatically scrape websites. Check availability, loyalty schemes, minimum order amounts and delivery costs on the seller's website.
+
+Recorded quotations use browser localStorage scoped to the signed-in Firebase UID. They are **not** yet synchronised across devices or saved to Firestore. Users clearing this browser's data will lose them. Automated live pricing, history, alerts and cross-device quote storage are future integrations requiring a reliable authorised data source and updated backend rules.
