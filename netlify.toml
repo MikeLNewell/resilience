@@ -2,6 +2,7 @@
 publish = "."
 
 [[redirects]]
-from = "/*"
-to = "/index.html"
+from = "/"
+to = "/firebase-app.html"
 status = 200
+force = true
