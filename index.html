@@ -82,4 +82,34 @@ summary=function(){
  return originalSummary()+'<div class="card"><h2>Budget forecast</h2><p>'+(funded?'Your current budget can fund the remaining catalogue targets within the selected period.':'Your current budget does not cover all catalogue targets within '+state.months+' months.')+'</p><button onclick="page(\'Roadmap\')">View monthly roadmap</button></div>';
 };
 render();
+</script><script>
+/* Stage 1.2: pantry expiry tracking and actionable reminders. */
+if(!state.expiry)state.expiry={};
+function pantryExpiry(id){
+ const v=prompt('Best-before or use-by date (YYYY-MM-DD), blank to clear',state.expiry[id]||'');
+ if(v===null)return;
+ if(v&& !/^\d{4}-\d{2}-\d{2}$/.test(v))return alert('Use YYYY-MM-DD');
+ if(v)state.expiry[id]=v;else delete state.expiry[id];
+ save();render();
+}
+function expiryStatus(id){
+ const d=state.expiry[id];if(!d)return '';
+ const days=Math.ceil((new Date(d+'T12:00:00').getTime()-Date.now())/86400000);
+ return days<0?'Past recorded date':days<=30?'Due within 30 days':'Recorded date '+d;
+}
+function pantryView(){
+ const food=catalog.filter(x=>x.category==='Food');
+ return '<div class="card"><h2>Deep pantry</h2><p>Keep your oldest stock at the front and record dates for foods you have in reserve. A best-before date relates primarily to quality; a use-by date is a food safety limit.</p>'+
+ food.map(x=>'<div class="item"><div><strong>'+x.name+'</strong><br><small>Owned '+qty(x)+' / Target '+target(x)+'</small><br><small class="'+(expiryStatus(x.id).includes('Due')||expiryStatus(x.id).includes('Past')?'warning':'')+'">'+(expiryStatus(x.id)||'No date recorded')+'</small></div><button class="secondary" onclick="pantryExpiry('+x.id+')">Set date</button><button onclick="add('+x.id+')">Add stock</button></div>').join('')+'</div>';
+}
+const priorRender=render;
+render=function(){
+ priorRender();
+ if(state.page==='Pantry')document.getElementById('view').innerHTML=pantryView();
+ if(state.page==='Dashboard'){
+  const due=catalog.filter(x=>qty(x)>0&&state.expiry[x.id]&&(new Date(state.expiry[x.id]+'T12:00:00').getTime()-Date.now())/86400000<=30);
+  if(due.length)document.getElementById('view').innerHTML+='<div class="card"><h2>Stock rotation reminders</h2>'+due.map(x=>'<p>'+x.name+': '+expiryStatus(x.id)+'</p>').join('')+'</div>';
+ }
+};
+render();
 </script></body></html>
