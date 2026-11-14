@@ -130,6 +130,7 @@ textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);ba
       <button type="button" data-tab="purchases">Purchases</button>
       <button type="button" data-tab="prices">Price finder</button>
       <button type="button" data-tab="wood">Wood &amp; Heating</button>
+      <button type="button" data-tab="energy">Home Energy</button>
       <button type="button" data-tab="settings">Settings</button>
     </nav>
     <div class="workspace-body">
@@ -154,6 +155,7 @@ textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);ba
 <script type="module">
 import {createPriceFinder} from './price-finder.js';
 import {createWood} from './wood-heating.js';
+import {createEnergy} from './home-energy.js';
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
 import {Timestamp,getFirestore,doc,collection,getDoc,setDoc,getDocs,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
@@ -196,6 +198,7 @@ async function refresh() {
 const filters = {search: '', category: '', status: ''};
 const priceFinder=createPriceFinder({catalogue,getNeed:need,getUser:()=>user,safe,money});
 const wood=createWood({db,getUser:()=>user,safe,money,say});
+const energy=createEnergy({db,getUser:()=>user,safe,money,say});
 const categories = [...new Set(catalogue.map(item => item.category))].sort();
 const purchaseDate = new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium', timeZone: 'Europe/London'});
 
@@ -239,7 +242,7 @@ const row = item => {
     <div class="row item-actions"><button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>${quantity>0?'<button type="button" class="secondary" data-edit-stock="'+item.id+'">Edit stock</button>':''}</div>
   </div>`;
 };
-const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', prices: 'Price finder', wood: 'Wood & Heating', settings: 'Planning settings'};
+const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', prices: 'Price finder', wood: 'Wood & Heating', energy: 'Home energy', settings: 'Planning settings'};
 let html = `<div class="page-heading"><h1>${tab === 'plan' ? `Your ${settings.months}-month buying plan` : titles[tab]}</h1></div>`;
 if (tab === 'plan') {
   html += renderCalendar() + renderReview();
@@ -281,6 +284,8 @@ if (tab === 'plan') {
       <button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
     </div>`).join('')}
   </section>`;
+} else if (tab === 'energy') {
+  html += energy.render();
 } else if (tab === 'wood') {
   html += wood.render();
 } else if (tab === 'prices') {
@@ -311,6 +316,7 @@ bindCalendar();
 bindProfile();
 if(tab === 'prices')priceFinder.bind();
 if(tab === 'wood')wood.bind();
+if(tab === 'energy')energy.bind();
 if (tab === 'inventory') {
   const search = $('stockSearch');
   const category = $('stockCategory');
@@ -762,5 +768,5 @@ function authError(error) {
   };
   say(messages[error.code] || 'Unable to complete this request. Please try again.','error');
 }
-onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('');await wood.load()}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();closeEdit();wood.reset();profile={...defaultProfile};savedMonths=[];completions={};review=null;selectedMonth='';stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
+onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('');await Promise.all([wood.load(),energy.load()])}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();closeEdit();wood.reset();energy.reset();profile={...defaultProfile};savedMonths=[];completions={};review=null;selectedMonth='';stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
 </script></body></html>
