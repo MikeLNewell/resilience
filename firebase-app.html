@@ -98,7 +98,7 @@ nav [aria-current="page"] { color: var(--accent); background: var(--surface); bo
   .item-name { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
-textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);background:var(--surface);color:var(--ink)}.month-line{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:20px;min-height:20px}#profileForm,#completeMonthForm{display:grid;gap:16px}.print-only{display:none}@media(max-width:570px){.month-line{grid-template-columns:1fr 1fr}.month-line .check-label{grid-column:1/-1}}@media print{header,nav,#message,#recordForm,.no-print,.page-heading,#auth{display:none!important}.print-only{display:block}main,.workspace,.workspace-body,#content{display:block;padding:0;margin:0;max-width:none}.printable-month{border:0;background:white;color:black}body{background:white;color:black}}.price-links{line-height:2.2}.price-links a{display:inline-block;margin-right:9px}.price-table{width:100%;border-collapse:collapse}.price-table th,.price-table td{text-align:left;padding:9px;border-bottom:1px solid var(--line)}.price-table th{font-weight:600}.price-table td:last-child,.price-table th:last-child{text-align:right}@media(max-width:570px){.price-table{font-size:.82rem}}</style>
+textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);background:var(--surface);color:var(--ink)}.month-line{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:14px;padding:15px 0;border-bottom:1px solid var(--line)}.check-label{display:flex;align-items:center;gap:8px}.check-label input{width:20px;min-height:20px}#profileForm,#completeMonthForm{display:grid;gap:16px}.print-only{display:none}@media(max-width:570px){.month-line{grid-template-columns:1fr 1fr}.month-line .check-label{grid-column:1/-1}}@media print{header,nav,#message,#recordForm,.no-print,.page-heading,#auth{display:none!important}.print-only{display:block}main,.workspace,.workspace-body,#content{display:block;padding:0;margin:0;max-width:none}.printable-month{border:0;background:white;color:black}body{background:white;color:black}}.price-links{line-height:2.2}.price-links a{display:inline-block;margin-right:9px}.price-table{width:100%;border-collapse:collapse}.price-table th,.price-table td{text-align:left;padding:9px;border-bottom:1px solid var(--line)}.price-table th{font-weight:600}.price-table td:last-child,.price-table th:last-child{text-align:right}@media(max-width:570px){.price-table{font-size:.82rem}}.item-actions{justify-content:flex-end;align-items:center}.item-actions button{white-space:nowrap}.item.purchase{grid-template-columns:minmax(0,1fr) auto auto}#editForm{border-top:3px solid var(--accent)}#editForm:not(.hidden){display:grid;gap:16px}#editCostLabel.hidden{display:none}@media(max-width:570px){.item-actions{grid-column:1/-1;justify-content:flex-start}.item.purchase{grid-template-columns:minmax(0,1fr) auto}.item.purchase button{grid-column:1/-1;justify-self:start}}@media print{#editForm{display:none!important}}</style>
 </head>
 <body>
 <header><div class="header-inner">
@@ -141,7 +141,12 @@ textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--control);ba
         <p class="muted">Enter £0 for stock you already own.</p>
         <div class="row"><button id="recordSave" type="submit">Save item</button><button id="recordCancel" type="button" class="secondary">Cancel</button></div>
       </form>
-      <div id="content"></div>
+      <form id="editForm" class="card hidden" aria-labelledby="editTitle">
+        <h2 id="editTitle"></h2><p id="editHelp" class="muted"></p>
+        <div class="row"><label>Quantity<input id="editQuantity" type="number" min="0" max="1000000" step="1" required></label>
+        <label id="editCostLabel">Total paid (£)<input id="editCost" type="number" min="0" max="100000" step=".01"></label></div>
+        <div class="row"><button type="submit" id="editSave">Save changes</button><button type="button" id="editDelete" class="secondary">Delete</button><button type="button" id="editCancel" class="secondary">Cancel</button></div>
+      </form><div id="content"></div>
     </div>
   </section>
 </main>
@@ -184,7 +189,7 @@ async function refresh() {
  if(user?.uid!==uid)return;
  const [a,b]=await Promise.all([getDocs(collection(root,'inventory')),getDocs(collection(root,'purchases')),loadCalendar(uid).catch(err=>{if(err.code==='permission-denied'){say('Additional calendar permissions are not yet published in Firebase. Inventory remains available.','error');return;}throw err;})]);
  if(user?.uid!==uid)return;
- stock=Object.fromEntries(a.docs.map(d=>[d.id,d.data()]));purchases=b.docs.map(d=>d.data());render();
+ stock=Object.fromEntries(a.docs.map(d=>[d.id,d.data()]));purchases=b.docs.map(d=>({...d.data(),recordId:d.id}));render();
 }
 const filters = {search: '', category: '', status: ''};
 const priceFinder=createPriceFinder({catalogue,getNeed:need,getUser:()=>user,safe,money});
@@ -228,7 +233,7 @@ const row = item => {
     <div class="item-stock"><small><strong>${safe(quantity)}</strong> of ${safe(goal)} in stock</small>
       <progress class="progress" aria-label="${safe(item.name)} stock target" value="${Math.min(quantity, goal)}" max="${goal}"></progress>
     </div>
-    <button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>
+    <div class="row item-actions"><button type="button" class="secondary" data-price="${item.id}" aria-label="Find prices for ${safe(item.name)}">Prices</button><button type="button" data-add="${item.id}" aria-label="Record ${safe(item.name)}">Record</button>${quantity>0?'<button type="button" class="secondary" data-edit-stock="'+item.id+'">Edit stock</button>':''}</div>
   </div>`;
 };
 const titles = {plan: 'Your 12-month buying plan', dashboard: 'Household overview', inventory: 'Inventory', shopping: 'Shopping list', purchases: 'Purchases', prices: 'Price finder', settings: 'Planning settings'};
@@ -279,12 +284,12 @@ if (tab === 'plan') {
   const history = [...purchases].sort((a, b) =>
     (b.purchasedAt?.toMillis?.() ?? 0) - (a.purchasedAt?.toMillis?.() ?? 0));
   html += `<section class="card" aria-label="Purchase history"><h2>Purchase history</h2>
-    <p class="stock-summary muted">Spent this month <strong>${money(spent)}</strong> of ${money(settings.monthlyBudget)}</p>
+    <p class="stock-summary muted">Spent this month <strong>${money(spent)}</strong> of ${money(settings.monthlyBudget)}</p><p class="muted">Edit a purchase to correct its quantity or cost. Deleting a purchase reverses its recorded stock addition. To remove consumed stock without changing spending, use Inventory instead.</p>
     ${history.length ? history.map(p => {
       const date = p.purchasedAt?.toDate?.();
       return `<div class="item purchase"><span>${safe(p.name)} × ${safe(p.quantity)}
         ${date ? `<time class="purchase-date muted" datetime="${date.toISOString()}">${purchaseDate.format(date)}</time>` : ''}
-        </span><strong class="money">${money(p.cost)}</strong></div>`;
+        </span><strong class="money">${money(p.cost)}</strong><button type="button" class="secondary" data-edit-purchase="${safe(p.recordId)}">Edit / delete</button></div>`;
     }).join('') : '<p>No purchases recorded yet.</p>'}
   </section>`;
 } else {
@@ -335,6 +340,9 @@ if (tab === 'inventory') {
   updateStock();
 }
 $('content').onclick = event => {
+  if(busy || $('recordSave').disabled)return;
+  const stockEdit=event.target.closest('[data-edit-stock]');if(stockEdit){openEdit('stock',Number(stockEdit.dataset.editStock));return;}
+  const purchaseEdit=event.target.closest('[data-edit-purchase]');if(purchaseEdit){openEdit('purchase',purchaseEdit.dataset.editPurchase);return;}
   const priceButton=event.target.closest('button[data-price]');
   if(priceButton){priceFinder.show(Number(priceButton.dataset.price));return;}
   const button = event.target.closest('button[data-add]');
@@ -342,9 +350,78 @@ $('content').onclick = event => {
 };
 if($('settingsForm'))$('settingsForm').onsubmit=async e=>{e.preventDefault();let v={monthlyBudget:Number($('budget').value),months:Number($('months').value),days:Number($('days').value),rollover:true};if(!Number.isFinite(v.monthlyBudget)||v.monthlyBudget<0)return;say('Saving…');try{await setDoc(path(),{...v,updatedAt:serverTimestamp()},{merge:true});await refresh();say('Settings saved', 'success')}catch(err){say(err.message, 'error')}};
 }
+
+let editing=null;
+function closeEdit(){editing=null;$('editForm').classList.add('hidden')}
+function openEdit(kind,id){
+  closeRecord();const p=kind==='purchase'?purchases.find(x=>x.recordId===id):null;
+  const item=kind==='stock'?catalogue[id]:catalogue[p?.itemId];
+  if(!item)return;
+  editing={kind,id,uid:user.uid,quantity:kind==='stock'?owned(item):p.quantity,cost:p?.cost};
+  $('editTitle').textContent=(kind==='stock'?'Edit current stock: ':'Edit purchase: ')+item.name;
+  $('editHelp').textContent=kind==='stock'?'Set the actual quantity in stock. This does not change your spending history. Delete removes all current stock for this item.':'Correct this individual purchase. Quantity changes also adjust current stock; cost changes update spending only. Delete reverses the purchase. If stock has already been used, reconcile Inventory first.';
+  $('editQuantity').min=kind==='stock'?'0':'1';
+  $('editQuantity').value=editing.quantity;
+  $('editCostLabel').classList.toggle('hidden',kind==='stock');
+  $('editCost').disabled=kind==='stock';$('editCost').required=kind==='purchase';
+  $('editCost').value=p?Number(p.cost).toFixed(2):'';
+  $('editForm').classList.remove('hidden');$('editQuantity').focus();$('editForm').scrollIntoView({block:'nearest'});
+}
+$('editCancel').onclick=closeEdit;
+async function applyEdit(remove){
+  if(!editing||busy||editing.uid!==user?.uid)return;
+  const e={...editing},quantity=remove?0:$('editQuantity').valueAsNumber,cost=remove?0:$('editCost').valueAsNumber;
+  if(!Number.isSafeInteger(quantity)||quantity<(e.kind==='purchase'&&!remove?1:0)||quantity>1000000||
+    (e.kind==='purchase'&&(!Number.isFinite(cost)||cost<0||cost>100000))){say('Check the quantity and cost.','error');return;}
+  if(remove&&!confirm(e.kind==='stock'?'Remove all current stock for this item? Purchase history will remain.':'Delete this purchase and reverse its stock addition?'))return;
+  const root=doc(db,'households',e.uid);
+  busy=true;$('editSave').disabled=$('editDelete').disabled=$('editCancel').disabled=true;
+  let committed=false;
+  try {
+    await runTransaction(db,async tx=>{
+      if(e.kind==='stock'){
+        const ref=doc(root,'inventory',String(e.id)),snap=await tx.get(ref),item=catalogue[e.id];
+        if((snap.exists()?snap.data().quantity:0)!==e.quantity)throw Error('Stock changed elsewhere. Cancel and reload before editing.');
+        if(remove||quantity===0)tx.delete(ref);
+        else tx.set(ref,{name:item.name,category:item.category,quantity,updatedAt:serverTimestamp()},{merge:true});
+        return;
+      }
+      const ref=doc(root,'purchases',e.id),snap=await tx.get(ref);
+      if(!snap.exists())throw Error('This purchase no longer exists.');
+      const p=snap.data();
+      if(p.quantity!==e.quantity||p.cost!==e.cost)throw Error('Purchase changed elsewhere. Cancel and reload before editing.');
+      const item=catalogue[p.itemId],stockRef=doc(root,'inventory',String(p.itemId));
+      const delta=quantity-p.quantity;
+      const stockSnap=delta?await tx.get(stockRef):null;
+      const current=stockSnap?.exists()?stockSnap.data().quantity:0;
+      if(delta&&current+delta<0)throw Error('Not enough current stock to reverse this purchase. Reconcile inventory first.');
+      const match=e.id.match(/^month-(\d{4}-\d{2})-(\d+)$/);
+      let receiptRef=null,receipt=null;
+      if(match){
+        receiptRef=doc(root,'completions',match[1]);const rs=await tx.get(receiptRef);
+        if(!rs.exists())throw Error('The linked monthly receipt is missing.');
+        receipt=rs.data();
+        if(!receipt.lines[match[2]])throw Error('The linked monthly receipt does not contain this item.');
+      }
+      if(delta)tx.set(stockRef,{name:item.name,category:item.category,quantity:current+delta,updatedAt:serverTimestamp()},{merge:true});
+      if(remove)tx.delete(ref);else tx.update(ref,{quantity,cost:Math.round(cost*100)/100});
+      if(receipt){
+        const lines={...receipt.lines};
+        if(remove)delete lines[match[2]];else lines[match[2]]={quantity,cost:Math.round(cost*100)/100};
+        tx.update(receiptRef,{lines,totalCost:Math.round(Object.values(lines).reduce((sum,line)=>sum+line.cost*100,0))/100});
+      }
+    });
+    committed=true;closeEdit();await refresh();say(remove?'Record deleted':'Changes saved','success');
+  }catch(err){say(committed?'Changes saved, but refresh failed. Reload the page.':err.code==='permission-denied'?'Permission denied. Publish the latest Firestore rules before editing purchases.':err.message,'error')}
+  finally{busy=false;$('editSave').disabled=$('editDelete').disabled=$('editCancel').disabled=false;}
+}
+$('editForm').onsubmit=e=>{e.preventDefault();applyEdit(false)};
+$('editDelete').onclick=()=>applyEdit(true);
+
 let selectedItem = null;
 function openRecord(id, quantity = 1) {
   if ($('recordSave').disabled) return;
+  closeEdit();
   selectedItem = catalogue[id];
   $('recordTitle').textContent = 'Record ' + selectedItem.name;
   $('recordQuantity').value = String(quantity);
@@ -413,7 +490,7 @@ $('register').onclick=async()=>{const email=validatedEmail();if(!email)return;if
 $('resetPassword').onclick=async()=>{const email=validatedEmail();if(!email)return;$('resetPassword').disabled=true;try{await sendPasswordResetEmail(auth,email);say('If the account exists, check your email for a password-reset link.','success')}catch(error){authError(error)}finally{$('resetPassword').disabled=false}};
 $('logout').onclick=()=>{if(!busy)signOut(auth)};document.querySelectorAll('[data-tab]').forEach(b=>b.onclick = () => {
   if (busy || $('recordSave').disabled || !$('content').firstElementChild) return;
-  closeRecord();
+  closeRecord();closeEdit();
   tab = b.dataset.tab;
   document.querySelectorAll('[data-tab]').forEach(button => {
     if (button === b) button.setAttribute('aria-current', 'page');
@@ -679,5 +756,5 @@ function authError(error) {
   };
   say(messages[error.code] || 'Unable to complete this request. Please try again.','error');
 }
-onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();profile={...defaultProfile};savedMonths=[];completions={};review=null;selectedMonth='';stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
+onAuthStateChanged(auth,async u=>{user=u;$('auth').classList.toggle('hidden',!!u);$('app').classList.toggle('hidden',!u);$('logout').classList.toggle('hidden',!u);if(u){say('Loading your household plan…');try{await refresh();say('')}catch(err){say('Database access failed: '+err.message, 'error')}}else{closeRecord();closeEdit();profile={...defaultProfile};savedMonths=[];completions={};review=null;selectedMonth='';stock={};purchases=[];filters.search=filters.category=filters.status='';$('content').replaceChildren();say('')}});
 </script></body></html>
