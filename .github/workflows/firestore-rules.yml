@@ -41,3 +41,5 @@ jobs:
           service_account: ${{ vars.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
       - name: Publish Firestore security rules only
         run: firebase deploy --only firestore:rules --project newell-household-resilience --non-interactive
+
+# Initial deployment verification after configuring workload identity.
