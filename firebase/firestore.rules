@@ -77,6 +77,13 @@ service cloud.firestore {
        && validPlan(request.resource.data);
    }
    match /completions/{month} {
+     allow update: if owner(uid)
+       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lines','totalCost'])
+       && request.resource.data.completedAt == resource.data.completedAt
+       && validLines(request.resource.data.lines)
+       && request.resource.data.lines.keys().hasOnly(resource.data.lines.keys())
+       && request.resource.data.totalCost is number
+       && request.resource.data.totalCost >= 0 && request.resource.data.totalCost <= 2100000;
      allow read: if owner(uid);
      allow create: if owner(uid) && validCompletion(request.resource.data)
        && exists(/databases/$(database)/documents/households/$(uid)/plans/$(month))
@@ -97,7 +104,11 @@ service cloud.firestore {
     allow create: if owner(uid) && request.resource.data.keys().hasOnly(['itemId','name','quantity','cost','purchasedAt'])
       && request.resource.data.quantity is number && request.resource.data.quantity > 0
       && request.resource.data.cost is number && request.resource.data.cost >= 0;
-    allow update, delete: if false;
+    allow update: if owner(uid)
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity','cost'])
+      && request.resource.data.quantity is int && request.resource.data.quantity > 0 && request.resource.data.quantity <= 1000000
+      && request.resource.data.cost is number && request.resource.data.cost >= 0 && request.resource.data.cost <= 100000;
+    allow delete: if owner(uid);
    }
   }
  }
