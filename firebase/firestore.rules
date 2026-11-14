@@ -65,6 +65,29 @@ service cloud.firestore {
       && d.completedAt == request.time;
   }
   match /households/{uid} {
+   match /heating/{record} {
+     allow read: if owner(uid) && record == 'wood';
+     allow create, update: if owner(uid) && record == 'wood'
+       && request.resource.data.keys().hasAll(['settings','batches','uses','updatedAt'])
+       && request.resource.data.keys().hasOnly(['settings','batches','uses','updatedAt'])
+       && request.resource.data.settings is map
+       && request.resource.data.settings.keys().hasAll(['kw','efficiency','hours','days','weeks','reserve','energy','density','looseDensity','bagKg','price'])
+       && request.resource.data.settings.keys().hasOnly(['kw','efficiency','hours','days','weeks','reserve','energy','density','looseDensity','bagKg','price'])
+       && request.resource.data.settings.kw >= 1 && request.resource.data.settings.kw <= 12
+       && request.resource.data.settings.efficiency >= 40 && request.resource.data.settings.efficiency <= 95
+       && request.resource.data.settings.hours >= 0.5 && request.resource.data.settings.hours <= 24
+       && request.resource.data.settings.days >= 1 && request.resource.data.settings.days <= 7
+       && request.resource.data.settings.weeks >= 1 && request.resource.data.settings.weeks <= 52
+       && request.resource.data.settings.reserve >= 0 && request.resource.data.settings.reserve <= 100
+       && request.resource.data.settings.energy >= 2 && request.resource.data.settings.energy <= 5
+       && request.resource.data.settings.density >= 100 && request.resource.data.settings.density <= 900
+       && request.resource.data.settings.looseDensity >= 100 && request.resource.data.settings.looseDensity <= 700
+       && request.resource.data.settings.bagKg >= 1 && request.resource.data.settings.bagKg <= 100
+       && request.resource.data.settings.price >= 0 && request.resource.data.settings.price <= 10
+       && request.resource.data.batches is list && request.resource.data.batches.size() <= 100
+       && request.resource.data.uses is list && request.resource.data.uses.size() <= 365
+       && request.resource.data.updatedAt == request.time;
+   }
    match /preferences/{preference} {
      allow read: if owner(uid);
      allow create, update: if owner(uid) && (
