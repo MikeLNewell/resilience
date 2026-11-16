@@ -9,7 +9,9 @@ Household preparedness planner for a UK household, deployed at https://resilienc
 - Firebase Authentication provides email/password login.
 - Cloud Firestore holds planning settings, inventory and purchase history under `households/{uid}`.
 - The Firestore rules in `firebase/firestore.rules` restrict each household to the authenticated UID.
-- `index.html` is a legacy localStorage prototype and is **not** the deployed home page.
+- Netlify publishes only `public/`, containing the live HTML, Firebase configuration and three feature modules.
+- `archive/index.html` and `archive/supabase/` are retained historical files, not used or published.
+- Firebase rules, deployment configuration, workflows and documentation remain outside `public/`.
 
 ## Current features
 
@@ -19,21 +21,23 @@ The monthly buying forecast uses the configured budget and number of planning mo
 
 ## Firebase deployment and security
 
-The web configuration in `firebase-config.js` contains public Firebase app identifiers, not administrator credentials. Security depends on deployed Firebase Auth settings and Firestore rules. Rules in the repository are not necessarily the rules currently published in Firebase.
+The web configuration in `public/firebase-config.js` contains public Firebase app identifiers, not administrator credentials. Security depends on deployed Firebase Auth settings and Firestore rules. Rules in the repository are not necessarily the rules currently published in Firebase.
 
-Deploy Firestore rules separately using authorised Firebase project access, and verify owner isolation using Firebase emulators and live authorised tests before treating the service as private. Netlify publishing does not deploy Firestore rules.
+The GitHub Actions workflow `.github/workflows/firestore-rules.yml` deploys `firebase/firestore.rules` to production when relevant changes are pushed to `main`. Netlify publishing itself does not deploy Firestore rules. Verify owner isolation using Firebase emulators and authorised live tests.
 
 Do not publish service-account keys, private tokens or household data in the repository.
 
 ## Development status
 
-The household profile, saved purchasing calendar, monthly completion receipts, six-month stock review and password-reset functionality are now committed on the default branch. Corresponding access rules are in `firebase/firestore.rules`. These rules MUST be published to the Firebase project separately: pushing to GitHub or deploying Netlify does not publish Firestore rules. The existing inventory remains usable if calendar-rule access is denied. JavaScript syntax has been checked, but end-to-end browser/Auth/Firestore emulator testing and confirmation of the live Netlify deployment remain outstanding.
+The household profile, saved purchasing calendar, monthly completion receipts, stock review, password reset, wood heating and meter readings are implemented in the authenticated application. Firestore rules are deployed through the separate GitHub Actions workflow. Verify the workflow result after any rules change.
 
-To publish, open Firebase Console → project `newell-household-resilience` → Firestore Database → Rules, paste the repository's full `firebase/firestore.rules`, inspect and publish. Confirm Email/Password is enabled in Firebase Authentication and add `resilience.newell.phd` to authorised domains if needed. Test by signing in, saving profile, creating the fixed schedule and completing one month using a dedicated test account.
+## Netlify deployment
+
+No build step is required. `netlify.toml` publishes `public/` and rewrites `/` to `/firebase-app.html`. After deployment, verify sign-in and existing data, and confirm `/README.md`, `/firebase-setup.md`, `/supabase/schema.sql`, `/archive/index.html`, `/firebase/firestore.rules` and `/index.html` return HTTP 404.
 
 ## Limitations
 
-The plan is indicative and does not guarantee that supplies are sufficient for a particular emergency. The original legacy page uses localStorage and does not synchronise.
+The plan is indicative and does not guarantee that supplies are sufficient for a particular emergency. The archived legacy page is not part of the deployed application.
 
 ## Price Finder
 
