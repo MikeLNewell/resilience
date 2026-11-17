@@ -1,0 +1,14 @@
+{
+  "name": "resilience-security-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Firestore owner-only emulator rules tests. Never publish with Netlify.",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-resilience-lockdown \"node --test tests/firestore.rules.test.cjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.3.0",
+    "firebase-tools": "15.36.0"
+  }
+}
